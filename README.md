@@ -10,7 +10,6 @@ Everything runs in the browser, on your device. No video leaves it.
 ```bash
 git clone https://github.com/S2K7x/TrackED.git
 cd TrackED
-git checkout claude/finger-movement-recognition-dnlrra
 npm start                 # serves the app at http://localhost:8000 (Python 3)
 # no Python? `npx serve -l 8000` works too
 ```
@@ -42,6 +41,8 @@ Each step validates itself as soon as you succeed. You can skip it and replay it
 | Tracking points / FPS | Press <kbd>D</kbd> or the dots button: render fps, tracking fps, latency and resolution. |
 
 Run the unit tests with `npm test` (Node 20+).
+
+**Branches.** `main` always holds the latest working version. Every push to a work branch (`claude/**`) runs the tests in GitHub Actions and, if they pass, merges into `main` automatically (`.github/workflows/sync-main.yml`). The CI (`.github/workflows/ci.yml`) also runs the tests on `main` and on pull requests.
 
 ## Features
 The bottom sheet has five tabs:

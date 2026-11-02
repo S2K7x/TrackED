@@ -1,0 +1,47 @@
+name: Keep main up to date
+
+# Every push to a work branch (claude/**) is tested; if the tests pass, the
+# branch is merged into main automatically, so main always has the latest
+# working version.
+on:
+  push:
+    branches: ["claude/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-main
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  merge:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Merge the pushed branch into main
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin main >/dev/null; then
+            git checkout -B main origin/main
+            # fast-forward when possible, otherwise a merge commit; stop on conflicts
+            git merge --no-edit "${GITHUB_SHA}"
+          else
+            git checkout -B main "${GITHUB_SHA}"
+          fi
+          git push origin main
