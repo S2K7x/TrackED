@@ -48,3 +48,16 @@ test("SignHold fires once after the hold time", () => {
   h.update("victory", 1.1);
   assert.equal(h.update("victory", 1.6).fire, true);    // released and shown again
 });
+
+test("3D world landmarks: a palm seen edge-on in the image is still an open palm", async () => {
+  // image: fingers foreshortened (all tips crowded near the knuckles) → 2D alone can't tell
+  const img = Array.from({ length: 21 }, (_, i) => ({ x: 0.5 + (i % 4) * 0.002, y: 0.6 - (i % 4) * 0.002 }));
+  // world (metres): a flat, open hand pointing at the camera along -z
+  const world = Array.from({ length: 21 }, () => ({ x: 0, y: 0, z: 0 }));
+  const finger = (start, x) => [0.03, 0.06, 0.08, 0.1].forEach((d, k) => (world[start + k] = { x, y: 0.02, z: -d }));
+  finger(5, -0.02); finger(9, -0.005); finger(13, 0.01); finger(17, 0.025);
+  [[-0.02, 0.0, -0.01], [-0.04, 0.005, -0.02], [-0.06, 0.01, -0.03], [-0.08, 0.015, -0.04]].forEach(([x, y, z], k) => (world[1 + k] = { x, y, z }));
+  world[0] = { x: 0, y: 0.03, z: 0.02 };
+  assert.equal(classifySign(img, 1), null);
+  assert.equal(classifySign(img, 1, world), "open_palm");
+});

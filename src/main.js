@@ -52,13 +52,15 @@ const state = {
 const FADE_IN = 8;        // alpha units per second
 const FADE_OUT = 5;
 const MAX_MISSES = 3;     // keep the frame through a few missed detections (motion blur, occlusion)
+const MIN_HAND_SCORE = 0.6; // handedness confidence below this = likely not a hand
 const FACE_TTL = 0.6;     // seconds before stale face data is dropped (stretched when face tracking is slow)
 
 const device = deviceProfile();
 document.documentElement.classList.toggle("is-mobile", device.mobile);
 let extrasEvery = device.extrasEvery; // adapted at runtime from the measured tracking rate
 
-const quadFilter = new PointsFilter(4, { minCutoff: 1.5, beta: 8, dCutoff: 1 });
+// tuned with tools/tune-filter.mjs (Casiez et al. procedure): ~10% less lag than (1.5, 8) for +0.1 px jitter
+const quadFilter = new PointsFilter(4, { minCutoff: 2, beta: 12, dCutoff: 1 });
 const stats = { renderFrames: 0, detectFrames: 0, fps: 0, dps: 0, slow: 0, fast: 0, since: performance.now() };
 
 let renderer, tracker, capture;
@@ -651,7 +653,18 @@ function onVision(result, timestampMs) {
   const now = performance.now();
   state.latency += (now - timestampMs - state.latency) * 0.1;
   const mirror = state.facing === "user";
-  state.hands = mirror ? result.hands.map(mirrorLandmarks) : result.hands;
+  // drop low-confidence hands (false positives on hand-like shapes) using MediaPipe's handedness score
+  const info = result.handInfo || [];
+  state.handInfo = info; // raw handedness / scores (debug HUD, tests)
+  const keep = result.hands.map((_, i) => (info[i]?.score ?? 1) >= MIN_HAND_SCORE);
+  let hands = result.hands.filter((_, i) => keep[i]);
+  const labels = info.filter((_, i) => keep[i]).map((h) => h.label);
+  // two confident hands with the SAME handedness are two people's hands (or a
+  // misdetection), not one person framing: don't build a frame from them
+  if (hands.length === 2 && labels[0] && labels[0] === labels[1]
+      && info.filter((_, i) => keep[i]).every((h) => h.score > 0.85)) hands = hands.slice(0, 1);
+  state.hands = mirror ? hands.map(mirrorLandmarks) : hands;
+  state.world = hands.length === 1 ? result.world : null;
   if (result.faces) {
     const faces = mirror ? result.faces.map(mirrorFace) : result.faces;
     smoothMeshes(faces, timestampMs / 1000);
@@ -690,7 +703,8 @@ function readSign(hand, t) {
   const pill = $("#sign");
   if (settings.signs !== "on" || !hand) { signHold.reset(); pill.hidden = true; return; }
   const aspect = video.videoWidth / video.videoHeight || 1;
-  const r = signHold.update(classifySign(hand, aspect), t);
+  // world landmarks are metric 3D (independent of mirroring and perspective) → more robust finger shapes
+  const r = signHold.update(classifySign(hand, aspect, state.world), t);
   if (!r.sign) { pill.hidden = true; return; }
   const sgn = SIGNS[r.sign];
   pill.hidden = false;

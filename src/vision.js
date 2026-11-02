@@ -3,6 +3,7 @@
 // first time an effect needs them, and only run on frames that ask for them.
 import { FilesetResolver, HandLandmarker, FaceLandmarker, ImageSegmenter, MP_BASE } from "./mediapipe.js";
 import { summarizeFace } from "./faces.js";
+import { MaskStabilizer } from "./temporal.js";
 
 const MODELS = {
   hand: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
@@ -42,6 +43,7 @@ export class VisionPipeline {
     this.faceTask = null;
     this.segTask = null;
     this.stillFace = null; // IMAGE-mode face landmarker for uploaded photos
+    this.stabilizer = new MaskStabilizer();
   }
 
   async init(delegate = "GPU") {
@@ -111,6 +113,12 @@ export class VisionPipeline {
     const out = {};
     const res = this.hand.detectForVideo(image, ts);
     out.hands = (res.landmarks || []).map((lm) => lm.map((p) => ({ x: p.x, y: p.y })));
+    // per hand: handedness label + confidence (MediaPipe Hands, Zhang et al. 2020)
+    out.handInfo = (res.handedness || res.handednesses || []).map((h) => ({ label: h[0]?.categoryName, score: h[0]?.score ?? 1 }));
+    // metric 3D landmarks (metres, hand-centred) for the one-hand sign classifier
+    if (out.hands.length === 1 && res.worldLandmarks?.[0]) {
+      out.world = res.worldLandmarks[0].map((p) => ({ x: p.x, y: p.y, z: p.z }));
+    }
 
     const aspect = (image.width || image.videoWidth) / (image.height || image.videoHeight) || 1;
     if (want.face) {
@@ -131,7 +139,11 @@ export class VisionPipeline {
       if (this.segTask) {
         const sr = this.segTask.segmentForVideo(image, ts);
         const m = sr.categoryMask;
-        if (m) out.mask = { data: m.getAsUint8Array().slice(), width: m.width, height: m.height };
+        if (m) {
+          // temporal vote against the 2 previous masks removes one-frame flicker at boundaries
+          const data = this.stabilizer.apply(m.getAsUint8Array().slice());
+          out.mask = { data, width: m.width, height: m.height };
+        }
         sr.close();
       }
     }

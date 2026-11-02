@@ -7,13 +7,14 @@
 
 const FINGERS = { index: [5, 6, 7, 8], middle: [9, 10, 11, 12], ring: [13, 14, 15, 16], pinky: [17, 18, 19, 20] };
 
-function v(a, b, aspect) { return { x: (b.x - a.x) * aspect, y: b.y - a.y }; }
-function len(p) { return Math.hypot(p.x, p.y); }
+// 2D image points ({x, y}, aspect-corrected) or 3D world points ({x, y, z}, metres)
+function v(a, b, aspect) { return { x: (b.x - a.x) * aspect, y: b.y - a.y, z: (b.z ?? 0) - (a.z ?? 0) }; }
+function len(p) { return Math.hypot(p.x, p.y, p.z); }
 function dist(a, b, aspect) { return len(v(a, b, aspect)); }
 /** Angle at b (degrees) in the polyline a-b-c. */
 function angle(a, b, c, aspect) {
   const u = v(b, a, aspect), w = v(b, c, aspect);
-  const cos = (u.x * w.x + u.y * w.y) / (len(u) * len(w) || 1);
+  const cos = (u.x * w.x + u.y * w.y + u.z * w.z) / (len(u) * len(w) || 1);
   return (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
 }
 
@@ -30,16 +31,21 @@ export function thumbExtended(lm, aspect = 1) {
 }
 
 /**
+ * @param lm     21 image landmarks (normalised)
+ * @param world  optional 21 world landmarks (metres). Finger shape is then
+ *               judged in true 3D, so a hand turned towards the camera, where
+ *               fingers look short in the image, is still read correctly.
  * @returns {"thumbs_up"|"victory"|"open_palm"|null}
  */
-export function classifySign(lm, aspect = 1) {
-  const ext = Object.fromEntries(Object.entries(FINGERS).map(([k, f]) => [k, fingerExtended(lm, f, aspect)]));
-  const thumb = thumbExtended(lm, aspect);
+export function classifySign(lm, aspect = 1, world = null) {
+  const shape = world ?? lm, k = world ? 1 : aspect;
+  const ext = Object.fromEntries(Object.entries(FINGERS).map(([name, f]) => [name, fingerExtended(shape, f, k)]));
+  const thumb = thumbExtended(shape, k);
   const n = Object.values(ext).filter(Boolean).length;
   if (thumb && n === 4) return "open_palm";
   if (ext.index && ext.middle && !ext.ring && !ext.pinky) {
     // victory: the two fingers are spread apart
-    const spread = dist(lm[8], lm[12], aspect) > dist(lm[5], lm[9], aspect) * 1.2;
+    const spread = dist(shape[8], shape[12], k) > dist(shape[5], shape[9], k) * 1.2;
     return spread ? "victory" : null;
   }
   if (thumb && n === 0) {

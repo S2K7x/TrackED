@@ -66,6 +66,8 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `src/accessories.js` | Built-in 3D accessories |
 | `src/gestures.js` | One-hand sign classifier (👍 ✌️ 🖐) and hold debouncing |
 | `sw.js` | Service worker: model / library caching, offline |
+| `src/temporal.js` | Temporal stabilisation of the segmentation mask |
+| `tools/tune-filter.mjs` | One Euro tuning experiment (jitter vs lag) |
 | `src/device.js` | Device profile: mobile/desktop, performance tier, detection size, model cadence |
 | `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
 | `src/geometry.js` | Builds the quad between the two hands |
@@ -87,6 +89,10 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 ## Smart and smooth: tracking quality and performance
 - **Latency compensation.** The camera-to-result delay is measured continuously (moving average). On every rendered frame, the frame's corners are pushed forward along their One Euro filtered velocity by "latency + time since the last result", with a cap of 80 ms. The frame stays glued to the hands instead of trailing behind them. Filtering removes jitter and prediction removes lag, the usual pairing described in the [1€ filter](https://cristal.univ-lille.fr/~casiez/1euro) literature. The One Euro derivative is taken on the raw signal, as in the original paper.
 - **Edge-aware segmentation.** The low-resolution category mask is refined with a 3×3 joint bilateral filter guided by the camera colours, the approach [Google Meet uses](https://research.google/blog/background-features-in-google-meet-powered-by-web-ml/). Effect edges follow hair and shoulders instead of blocky mask pixels. Low-end phones skip the refinement.
+- **Hand confidence and handedness.** MediaPipe Hands ([Zhang et al., 2020](https://arxiv.org/abs/2006.10214)) outputs a handedness label and confidence for each hand. Hands under 0.6 are dropped as false positives. Two confident hands with the *same* handedness (two people, or a misdetection) never build a frame.
+- **3D signs.** One-hand signs are judged on MediaPipe's metric *world* landmarks when available. Finger joint angles are then measured in true 3D, so a hand turned towards the camera, whose fingers look short in the image, is still read correctly.
+- **Segmentation without flicker.** A 3-frame temporal vote runs on the category mask in the worker. A pixel that flips class for a single frame, while the two previous raw frames agree, keeps its class. Real changes go through on their second frame. It is classic change-detection stabilisation, with no motion estimation, as advocated for real-time video segmentation (see Google's [mobile real-time video segmentation](https://research.google/blog/mobile-real-time-video-segmentation/)).
+- **Filter tuned by measurement, not by eye.** `tools/tune-filter.mjs` follows Casiez et al.'s procedure (CHI 2012). It simulates landmarks at 30 Hz with 1 px and 2.5 px of noise, still and moving at up to ~1.1 image widths per second, then picks the setting with the least lag (prediction included) within a sub-pixel jitter budget (≤ 0.5 px). Result: `minCutoff 2, beta 12` gives about 10% less lag than the previous `1.5, 8` (10.1 against 11.2 px RMS at 1 px noise) for +0.05 to 0.13 px of jitter. The same experiment shows that with heavy noise (dim light), no setting meets the jitter budget without large lag, which is the physical limit of the trade-off.
 - **Dynamic resolution.** If rendering stays under 22 fps for 3 s, the internal resolution drops by 15% steps (down to 55%). It climbs back once rendering holds 28 fps.
 - **Power saving.** With no hand in view for 3 s, tracking runs every other frame. A hand coming back is picked up within about 70 ms.
 - **Warm-up.** On mid and high-tier devices, the face model loads in the background during idle time, so the first mask, face filter or 3D accessory appears instantly.
@@ -119,6 +125,13 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 - **Cost control.** The face and segmentation models download on first use and only run while a frame is on screen. When both are active, they alternate frames.
 - **One Euro filter** gives strong smoothing when the hands are still (no jitter) and light smoothing when they move fast (no lag).
 - **Multiple MediaPipe tasks in a module worker.** MediaPipe normally loads only one task there (`ModuleFactory not set`). A `self.import` hook reuses the WASM factory for every task.
+
+## References
+- F. Zhang et al., *MediaPipe Hands: On-device Real-time Hand Tracking*, 2020. [arXiv:2006.10214](https://arxiv.org/abs/2006.10214)
+- I. Grishchenko et al., *Attention Mesh: High-fidelity Face Mesh Prediction in Real-time*, 2020. [arXiv:2006.10962](https://arxiv.org/abs/2006.10962)
+- G. Casiez, N. Roussel, D. Vogel, *1€ Filter: A Simple Speed-based Low-pass Filter for Noisy Input in Interactive Systems*, CHI 2012. [project page](https://cristal.univ-lille.fr/~casiez/1euro)
+- Google Research, [Background Features in Google Meet, Powered by Web ML](https://research.google/blog/background-features-in-google-meet-powered-by-web-ml/) (joint bilateral mask refinement)
+- Google Research, [Mobile Real-time Video Segmentation](https://research.google/blog/mobile-real-time-video-segmentation/) (temporal consistency on mobile)
 
 ## Credits
 - Face, hand and segmentation models and the canonical face mesh: [Google MediaPipe](https://github.com/google-ai-edge/mediapipe), Apache License 2.0.
