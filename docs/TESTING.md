@@ -1,7 +1,7 @@
 # Testing
 
 ## Unit tests
-`npm test` runs `node --test tests/*.test.mjs` (51 tests): geometry, 3D model fit (clamping, model key, per-model store), One Euro + prediction, faces, options ↔ renderer consistency, ready-made model files present, capture MIME, device profile, mesh data, gestures (2D + 3D), mask stabilizer, error helpers, onboarding. CI runs them on `main`, PRs and every `claude/**` push (which then auto-merges into `main`).
+`npm test` runs `node --test tests/*.test.mjs` (52 tests): geometry, 3D model fit (clamping, model key, per-model store), One Euro + prediction, faces, options ↔ renderer consistency, ready-made model files present, every mask option has a painter, capture MIME, device profile, mesh data, gestures (2D + 3D), mask stabilizer, error helpers, onboarding. CI runs them on `main`, PRs and every `claude/**` push (which then auto-merges into `main`).
 
 ## Browser tests (headless Chromium with a fake camera)
 Playwright and Chromium are pre-installed in the cloud container (`require('playwright')`, don't reinstall).

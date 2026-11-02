@@ -31,6 +31,7 @@
 | Watchdog killed a healthy worker | WASM compile during model warm-up blocks the worker for seconds | Worker reports `loading`; watchdog ignores slow frames while loading |
 | Name clash `maskTex` | Segmentation and face-mask textures shared a field | Renamed `faceMaskTex` |
 | Fit restore looked broken in a browser test | `accessory` is persisted as "model", so the test stopped waiting before the reloaded file was parsed | Tests wait for `three.userModel`, not the setting |
+| Kitsune ears drawn above the forehead were invisible | The face mesh stops at the hairline (UV oval top ≈ v 0.11); paint outside the oval is never sampled | Ears painted inside the oval; masks are previewed on the Blender reference head (its UVs match the app) |
 | Instagram UI visible in test screenshots | The test webcam clip was a screen recording of a reel | Cropped clip. The app itself never adds such UI |
 
 ## Tuning results

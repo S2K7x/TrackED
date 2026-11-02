@@ -3,7 +3,7 @@
 ## Next (agreed with the owner)
 1. ~~3D model fit panel~~ (done) and ~~Blender reference head~~ (done, `assets/reference/`).
 2. **Blender session**: build more **original** masks and helmets and export `.glb` files for the 3D tab. Never copyrighted characters. First one done: **Aero** helmet (`assets/models/`, script `tools/blender-helmet.py`). It is a built-in tile in the 3D tab (`glb` option in `options.js`, fetched once, anchor "As modelled").
-3. Optional **original hero mask** built into the app (2D, painted in UV space like Skull/Gold, colour-aware).
+3. ~~Original hero mask~~ (done: **Kitsune**, colour-aware, in `masks.js`). More ideas: oni / hannya-inspired variants, a half mask.
 
 ## Ideas backlog
 - Jaw-open / blink blendshapes driving 3D accessories (visor opening, eyes glowing).

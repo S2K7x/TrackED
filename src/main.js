@@ -214,8 +214,8 @@ function set(key, value, rerender = true) {
 // Built-in masks are painted in the face's canonical UV space; "Your mask" is an
 // image painted on the downloadable template; "Face swap" maps a photo's own face
 // mesh onto yours. How much the live lighting shades each mask:
-const MASK_SHADE = { wire: 0, visor: 0.3, skull: 0.7, gold: 0.95, feline: 0.7, warpaint: 0.6, custom: 0.55 };
-const COLORED_MASKS = new Set(["wire", "visor", "warpaint"]);
+const MASK_SHADE = { wire: 0, visor: 0.3, skull: 0.7, gold: 0.95, feline: 0.7, warpaint: 0.6, kitsune: 0.65, custom: 0.55 };
+const COLORED_MASKS = new Set(["wire", "visor", "warpaint", "kitsune"]);
 const userMasks = { custom: null, swap: null }; // { image, swapUV? }
 const meshFilters = [];                        // One Euro filters per face slot (468 points each)
 

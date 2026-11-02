@@ -28,6 +28,11 @@ test("ready-made 3D models exist and aren't built-in primitive accessories", asy
   }
 });
 
+test("every built-in mask option has a painter", async () => {
+  const { MASKS } = await import("../src/masks.js");
+  for (const o of OPTIONS.mask) if (o.value !== "none" && !o.upload) assert.ok(MASKS.includes(o.value), o.value);
+});
+
 test("hexToRgb", () => {
   assert.deepEqual(hexToRgb("#ff0080"), [1, 0, 128 / 255]);
 });

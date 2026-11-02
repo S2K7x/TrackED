@@ -227,6 +227,141 @@ const PAINTERS = {
   },
 };
 
+/**
+ * Kitsune: a festival fox mask in porcelain white, inspired by the traditional
+ * Japanese folk motif (original artwork). Markings follow the chosen colour.
+ */
+PAINTERS.kitsune = function kitsune(ctx, color) {
+  const ink = "#16110f", gold = "#d9a93a";
+  // porcelain base with a soft shading towards the edges
+  const g = ctx.createRadialGradient(S / 2, S * 0.48, 60, S / 2, S * 0.5, S * 0.52);
+  g.addColorStop(0, "#fffdf8");
+  g.addColorStop(0.75, "#f1ebe0");
+  g.addColorStop(1, "#d8cfbf");
+  fillFace(ctx, g, 10);
+
+  ctx.lineJoin = ctx.lineCap = "round";
+  const mirror = (fn) => { for (const s of [-1, 1]) fn(s); };
+  const side = (s, a, b) => (s < 0 ? a : b); // landmark on the image-left (s = -1) or image-right side
+
+  // fox ears painted on the upper forehead (the mesh ends at the hairline), with a gold inner line
+  mirror((s) => {
+    const [ex, ey] = pt(side(s, 67, 297));
+    const outer = [ex - s * 150, ey + 140], inner = [ex + s * 15, ey + 120], tip = [ex - s * 55, ey + 45];
+    ctx.beginPath();
+    ctx.moveTo(...outer);
+    ctx.quadraticCurveTo(tip[0] - s * 40, tip[1] + 40, ...tip);
+    ctx.quadraticCurveTo(tip[0] + s * 45, tip[1] + 30, ...inner);
+    ctx.quadraticCurveTo((outer[0] + inner[0]) / 2, outer[1] + 10, ...outer);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(outer[0] + s * 45, outer[1] - 8);
+    ctx.quadraticCurveTo(tip[0] - s * 4, tip[1] + 55, tip[0] + s * 4, tip[1] + 38);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = gold;
+    ctx.stroke();
+  });
+
+  // eye wings: a colour sweep around each eye, flicking up to the temple, with an ink liner
+  mirror((s) => {
+    const [ix, iy] = pt(side(s, 133, 362)), [ox, oy] = pt(side(s, 33, 263)), [bx, by] = pt(side(s, 105, 334));
+    const dir = Math.sign(ox - ix);
+    const tip = [ox + dir * 95, by - 55];
+    ctx.beginPath();
+    ctx.moveTo(ix, iy + 4);
+    ctx.quadraticCurveTo((ix + ox) / 2, iy + 46, ox + dir * 12, oy + 12);
+    ctx.quadraticCurveTo(ox + dir * 60, oy - 5, ...tip);
+    ctx.quadraticCurveTo(bx, by - 18, ix - dir * 6, iy - 34);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(ix + dir * 6, iy + 14);
+    ctx.quadraticCurveTo((ix + ox) / 2, iy + 34, ox + dir * 10, oy + 6);
+    ctx.quadraticCurveTo(ox + dir * 55, oy - 12, tip[0] - dir * 8, tip[1] + 14);
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = ink;
+    ctx.stroke();
+  });
+
+  // flaming jewel (hoju) on the forehead: colour drop with a gold rim and a highlight
+  const [fx, fy] = pt(151);
+  const jewel = (k) => {
+    ctx.beginPath();
+    ctx.moveTo(fx, fy - 70 * k);
+    ctx.bezierCurveTo(fx + 12 * k, fy - 40 * k, fx + 40 * k, fy - 18 * k, fx + 36 * k, fy + 8 * k);
+    ctx.bezierCurveTo(fx + 32 * k, fy + 36 * k, fx - 32 * k, fy + 36 * k, fx - 36 * k, fy + 8 * k);
+    ctx.bezierCurveTo(fx - 40 * k, fy - 18 * k, fx - 12 * k, fy - 40 * k, fx, fy - 70 * k);
+  };
+  jewel(1); ctx.fillStyle = color; ctx.fill();
+  ctx.lineWidth = 6; ctx.strokeStyle = gold; ctx.stroke();
+  ctx.save();
+  ctx.translate(-10, 6);
+  jewel(0.32); ctx.fillStyle = "rgba(255,255,255,.75)"; ctx.fill();
+  ctx.restore();
+
+  // cheek flames: three tapered strokes per side sweeping outwards and up, plus a curl at the root
+  const flame = (p0, c, p1, w) => {
+    // a quadratic curve thickened into a shape that tapers from w to 0
+    const n = 18, left = [], right = [];
+    for (let k = 0; k <= n; k++) {
+      const t = k / n, u = 1 - t;
+      const x = u * u * p0[0] + 2 * u * t * c[0] + t * t * p1[0], y = u * u * p0[1] + 2 * u * t * c[1] + t * t * p1[1];
+      const dx = 2 * u * (c[0] - p0[0]) + 2 * t * (p1[0] - c[0]), dy = 2 * u * (c[1] - p0[1]) + 2 * t * (p1[1] - c[1]);
+      const len = Math.hypot(dx, dy) || 1, half = (w / 2) * (1 - t) ** 0.8;
+      left.push([x - (dy / len) * half, y + (dx / len) * half]);
+      right.push([x + (dy / len) * half, y - (dx / len) * half]);
+    }
+    ctx.beginPath();
+    [...left, ...right.reverse()].forEach((q, k) => (k ? ctx.lineTo(...q) : ctx.moveTo(...q)));
+    ctx.closePath();
+    ctx.fill();
+  };
+  ctx.fillStyle = color;
+  mirror((s) => {
+    const [cx, cy] = pt(side(s, 205, 425));
+    const o = [cx - s * 10, cy - 10];
+    flame(o, [o[0] + s * 70, o[1] + 30], [o[0] + s * 165, o[1] - 70], 22);
+    flame([o[0], o[1] + 26], [o[0] + s * 80, o[1] + 60], [o[0] + s * 175, o[1] + 5], 18);
+    flame([o[0] - s * 4, o[1] + 50], [o[0] + s * 60, o[1] + 95], [o[0] + s * 140, o[1] + 75], 14);
+    ctx.beginPath();
+    ctx.arc(o[0] - s * 6, o[1] + 22, 17, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // little ink fox nose and an upturned smile at the mouth corners
+  const [nx, ny] = pt(4);
+  ctx.beginPath();
+  ctx.moveTo(nx - 22, ny - 6);
+  ctx.quadraticCurveTo(nx, ny - 16, nx + 22, ny - 6);
+  ctx.quadraticCurveTo(nx + 10, ny + 18, nx, ny + 20);
+  ctx.quadraticCurveTo(nx - 10, ny + 18, nx - 22, ny - 6);
+  ctx.fillStyle = ink;
+  ctx.fill();
+  mirror((s) => {
+    const [mx, my] = pt(side(s, 61, 291));
+    const dir = Math.sign(mx - S / 2);
+    ctx.beginPath();
+    ctx.moveTo(mx - dir * 4, my);
+    ctx.quadraticCurveTo(mx + dir * 26, my + 4, mx + dir * 38, my - 22);
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  });
+
+  // thin gold trim along the edge of the mask
+  ctx.save();
+  loopPath(ctx, CONTOURS.oval, 0.93);
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = gold;
+  ctx.globalAlpha = 0.85;
+  ctx.stroke();
+  ctx.restore();
+
+  cutHoles(ctx, { eyes: 1.12, mouth: 1.0 });
+};
+
 export const MASKS = Object.keys(PAINTERS);
 
 /** Paints a built-in mask. @returns {OffscreenCanvas|HTMLCanvasElement} */

@@ -35,6 +35,7 @@ export const OPTIONS = {
     { value: "gold", label: "Gold", tile: "linear-gradient(135deg,#fff1b8,#e2b33c 35%,#a8741a 60%,#f0cc62 85%)" },
     { value: "feline", label: "Feline", tile: "repeating-linear-gradient(100deg,#d8641c 0 9px,#1d130c 9px 12px)" },
     { value: "warpaint", label: "War paint", tile: "linear-gradient(180deg,#e9d8c8 0 40%,var(--pick) 40% 50%,#e9d8c8 50% 58%,var(--pick) 58% 68%,#e9d8c8 68%)" },
+    { value: "kitsune", label: "Kitsune", tile: "radial-gradient(circle at 50% 22%,var(--pick) 0 7%,transparent 8%),linear-gradient(to top right,transparent 36%,var(--pick) 36% 64%,transparent 64%) 12% 50%/38% 30% no-repeat,linear-gradient(to top left,transparent 36%,var(--pick) 36% 64%,transparent 64%) 88% 50%/38% 30% no-repeat,radial-gradient(circle,#fffdf8,#d8cfbf)" },
     { value: "custom", label: "Your mask", upload: "custom" },
     { value: "swap", label: "Face swap", upload: "swap" },
   ],
