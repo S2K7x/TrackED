@@ -9,6 +9,7 @@ import { Capture } from "./capture.js";
 import { drawSpark, drawWaves } from "./art.js";
 import { deviceProfile } from "./device.js";
 import { classifySign, SignHold } from "./gestures.js";
+import { Tutorial, STEPS, pickHint, HINTS } from "./onboarding.js";
 import { describeCameraError, constraintLadder, checkUpload, fitTextureSize, FailureBudget } from "./errors.js";
 
 const $ = (s) => document.querySelector(s);
@@ -191,6 +192,7 @@ function renderGroup(group) {
 }
 
 function set(key, value, rerender = true) {
+  if (key === "effect" && value !== settings[key]) onboard.effectChanges++;
   settings[key] = value;
   saveSettings();
   if (key === "color") document.documentElement.style.setProperty("--pick", value);
@@ -516,6 +518,8 @@ addEventListener("keydown", (e) => {
   else if (e.key === "r" || e.key === "R") $("#rec").click();
   else if (e.key === "d" || e.key === "D") $("#debug").click();
   else if (e.key === "f" || e.key === "F") toggleFreeze();
+  else if (e.key === "?") toggleHelp();
+  else if (e.key === "Escape" && !$("#helpPanel").hidden) toggleHelp(false);
   else if (e.key === "Escape" && countdownTimer) cancelCountdown();
   else return;
   e.preventDefault();
@@ -545,9 +549,15 @@ async function start() {
   tracker.onResult = onVision;
   tracker.onStatus = (msg) => (msg ? flash(msg) : null);
   keepAwake();
-  showStatus(MSG.loading);
+  // startup checklist: show what is loading and what is ready
+  bootStep("camera", "doing");
+  bootStep("model", "doing");
+  $("#boot").hidden = false;
+  const camP = startCamera().then((v) => { bootStep("camera", "done"); return v; }, (e) => { bootStep("camera", "fail"); throw e; });
+  const trkP = tracker.init().then((v) => { bootStep("model", "done"); return v; }, (e) => { bootStep("model", "fail"); throw e; });
   // camera and model load in parallel; each failure gets its own message
-  const [cam, trk] = await Promise.allSettled([startCamera(), tracker.init()]);
+  const [cam, trk] = await Promise.allSettled([camP, trkP]);
+  setTimeout(() => { $("#boot").hidden = true; }, 600);
   if (trk.status === "fulfilled") state.trackerMode = trk.value;
   if (cam.status === "rejected") return; // startCamera showed the error panel; its retry restarts the loop
   if (trk.status === "rejected") {
@@ -557,6 +567,7 @@ async function start() {
   }
   showStatus(MSG.showBoth);
   scheduleFrame();
+  maybeStartTutorial();
   // warm up the face model while idle, so the first mask / face filter / 3D accessory is instant
   if (device.tier !== "low") (window.requestIdleCallback || setTimeout)(() => tracker.warm(["face"]), { timeout: 4000 });
 }
@@ -608,6 +619,113 @@ async function startCamera() {
   state.faces = [];
   return stream;
 }
+
+// ---------------- Onboarding: startup checklist, tutorial, hints, help ----------------
+function bootStep(id, status) {
+  const li = $(`#boot [data-step="${id}"]`);
+  if (li) li.className = status;
+}
+
+const onboard = { effectChanges: 0, signsFired: 0, frameShownFor: 0, noHandsFor: 0, oneHandFor: 0, lastT: 0, hintShown: {}, brightness: null };
+const tutorial = new Tutorial();
+const ART = {
+  // neutral line-art hands (original drawings), animated with CSS
+  hands: `<svg viewBox="0 0 84 84"><g class="hand-l"><path d="M18 64V40m0 0V26m0 14l-5-9m5 9l6-12m-6 12l1-15m5 3v13"/><path d="M12 64h14"/></g>
+          <g class="hand-l r"><path d="M66 64V40m0 0V26m0 14l5-9m-5 9l-6-12m6 12l-1-15m-5 3v13"/><path d="M58 64h14"/></g></svg>`,
+  frame: `<svg viewBox="0 0 84 84"><g class="hand-l"><path d="M16 22v34h18"/></g><g class="hand-l r"><path d="M68 62V28H50"/></g>
+          <rect class="frame-pulse" x="22" y="28" width="40" height="28" rx="2"/></svg>`,
+  pinch: `<svg viewBox="0 0 84 84"><g class="pinch-l"><path d="M14 24v34h16"/></g><g class="pinch-r"><path d="M70 60V26H54"/></g>
+          <path d="M36 70l6 6 6-6" opacity=".7"/></svg>`,
+  signs: `<svg viewBox="0 0 84 84"><path d="M30 60V40l8-14c2-3 6-2 6 2l-2 10h12c3 0 5 3 4 6l-4 14c-1 2-3 3-5 3H30zM22 40h8v22h-8z"/></svg>`,
+  done: `<svg viewBox="0 0 84 84"><path d="M22 44l14 13 26-30"/></svg>`,
+};
+
+function maybeStartTutorial(force = false) {
+  let seen = false;
+  try { seen = localStorage.getItem("tracked.tutorialDone") === "1"; } catch { /* storage blocked */ }
+  if (seen && !force) return;
+  onboard.effectChanges = onboard.signsFired = onboard.frameShownFor = 0;
+  tutorial.start();
+  renderCoach(false);
+}
+
+function endTutorial() {
+  tutorial.stop();
+  $("#coach").hidden = true;
+  try { localStorage.setItem("tracked.tutorialDone", "1"); } catch { /* storage blocked */ }
+}
+
+function renderCoach(celebrating) {
+  const coach = $("#coach");
+  if (!tutorial.active) { coach.hidden = true; return; }
+  const step = tutorial.step;
+  coach.hidden = false;
+  coach.classList.toggle("success", celebrating);
+  coach.querySelector(".art").innerHTML = celebrating ? ART.done : ART[step.art];
+  coach.querySelector(".count").textContent = `Step ${tutorial.index + 1} of ${STEPS.length}`;
+  coach.querySelector("h2").textContent = celebrating ? "Nice!" : step.title;
+  coach.querySelector(".text").textContent = celebrating ? "Let's keep going." : step.text;
+  const next = coach.querySelector(".next");
+  // required steps unlock "Next" only once done (learn by doing); the optional last step can be finished anytime
+  next.textContent = tutorial.index === STEPS.length - 1 ? "Finish" : "Next";
+  next.hidden = !step.optional;
+}
+$("#coach .skip").addEventListener("click", endTutorial);
+$("#coach .next").addEventListener("click", () => { tutorial.next(); if (tutorial.finished) endTutorial(); else renderCoach(false); });
+
+// brightness of the camera image, sampled from a tiny canvas once in a while
+const probe = Object.assign(document.createElement("canvas"), { width: 24, height: 14 });
+const probeCtx = probe.getContext("2d", { willReadFrequently: true });
+let lastProbe = 0;
+function sampleBrightness(t) {
+  if (t - lastProbe < 1.5 || !video.videoWidth) return;
+  lastProbe = t;
+  probeCtx.drawImage(video, 0, 0, probe.width, probe.height);
+  const d = probeCtx.getImageData(0, 0, probe.width, probe.height).data;
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+  onboard.brightness = sum / (d.length / 4) / 255;
+}
+
+let hintTimer;
+function updateOnboarding(t) {
+  const dt = Math.min(0.2, t - (onboard.lastT || t));
+  onboard.lastT = t;
+  const n = state.hands.length;
+  onboard.frameShownFor = state.quad && state.alpha > 0.9 ? onboard.frameShownFor + dt : 0;
+  onboard.noHandsFor = n === 0 ? onboard.noHandsFor + dt : 0;
+  onboard.oneHandFor = n === 1 ? onboard.oneHandFor + dt : 0;
+
+  if (tutorial.active) {
+    const r = tutorial.update({ hands: n, frameShownFor: onboard.frameShownFor, effectChanges: onboard.effectChanges, signsFired: onboard.signsFired }, t);
+    if (r.changed) {
+      if (tutorial.finished) endTutorial();
+      else renderCoach(r.celebrating);
+    }
+    return; // no extra hints during the tutorial
+  }
+  sampleBrightness(t);
+  // a frame wider than ~90% of the picture usually means the hands are too close
+  const q = state.quad;
+  const handsTooClose = !!q && Math.max(...q.map((p) => p.x)) - Math.min(...q.map((p) => p.x)) > 0.92;
+  const id = $("#hint").hidden ? pickHint({ ...onboard, handsTooClose }, onboard.hintShown, t) : null;
+  if (id) {
+    onboard.hintShown[id] = t;
+    $("#hint span").textContent = HINTS[id];
+    $("#hint").hidden = false;
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => { $("#hint").hidden = true; }, 5000);
+  }
+}
+
+// help panel
+function toggleHelp(open = $("#helpPanel").hidden) {
+  $("#helpPanel").hidden = !open;
+  if (open) $("#helpPanel .close").focus();
+}
+$("#help").addEventListener("click", () => toggleHelp());
+$("#helpPanel .close").addEventListener("click", () => toggleHelp(false));
+$("#replay").addEventListener("click", () => { toggleHelp(false); maybeStartTutorial(true); });
 
 /** Retry button for camera errors: restart the camera and (re)start the frame loop. */
 async function retryCamera() {
@@ -734,6 +852,7 @@ function renderFrame() {
       if (layer) renderer.compositeLayer(layer, { clip, fade: smoothstep(fade) });
     }
   }
+  updateOnboarding(t / 1000);
   capture.afterDraw(); // photo snapshot must happen right after drawing (drawing buffer isn't preserved)
   if (state.debug) drawDebug();
   countFps(t);
@@ -853,7 +972,7 @@ function readSign(hand, t) {
   pill.querySelector("b").textContent = sgn.icon;
   pill.querySelector("span").textContent = sgn.label;
   pill.style.setProperty("--p", r.progress.toFixed(3));
-  if (r.fire) { sgn.run(); buzz(18); }
+  if (r.fire) { sgn.run(); buzz(18); onboard.signsFired++; }
 }
 
 function nextEffect() {

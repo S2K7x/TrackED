@@ -56,7 +56,8 @@
     </div>
 
     <button id="go" class="cta"><i class="dot"></i>Start camera</button>
-    <p class="fine">Everything runs on your device. No video ever leaves your browser.</p>
+    <p class="fine">Next, your browser will ask to use the camera: TrackED needs it to see your hands.
+      Everything runs on your device and no video ever leaves your browser.</p>
   </div>
 </section>
 
@@ -86,6 +87,9 @@
     <button id="flip" class="icon glass" aria-label="Switch camera" title="Switch camera">
       <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>
     </button>
+    <button id="help" class="icon glass" aria-label="Help and tutorial" title="Help (?)">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.4M12 16.6v.01"/></svg>
+    </button>
     <button id="debug" class="icon glass" aria-label="Show tracking points" title="Tracking points (D)">
       <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="1.5"/><circle cx="18" cy="6" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="6" cy="18" r="1.5"/><circle cx="18" cy="18" r="1.5"/></svg>
     </button>
@@ -96,6 +100,41 @@
   <div id="toast" class="pill glass" hidden></div>
   <div id="sign" class="pill glass" hidden><b></b><span></span><i class="ring" aria-hidden="true"></i></div>
   <div id="countdown" hidden></div>
+
+  <!-- startup checklist (what is loading, what is ready) -->
+  <ol id="boot" class="glass" aria-live="polite" hidden>
+    <li data-step="camera"><i></i>Camera</li>
+    <li data-step="model"><i></i>Hand tracking model</li>
+  </ol>
+
+  <!-- interactive tutorial: each step validates itself from live tracking -->
+  <section id="coach" class="glass" aria-live="polite" hidden>
+    <div class="art" aria-hidden="true"></div>
+    <div class="copy">
+      <p class="count"></p>
+      <h2></h2>
+      <p class="text"></p>
+      <div class="actions">
+        <button class="skip">Skip tutorial</button>
+        <button class="next chip">Next</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="hint" class="pill glass" hidden><i class="dot"></i><span></span></div>
+
+  <section id="helpPanel" class="glass" role="dialog" aria-modal="true" aria-labelledby="helpTitle" hidden>
+    <header><h2 id="helpTitle">How to use TrackED</h2><button class="close icon" aria-label="Close help"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
+    <div class="grid">
+      <article><b>The frame</b><p>Make an <em>L</em> with the thumb and index of each hand. Everything inside the frame changes. Pinch it shut and reopen quickly to switch effect.</p></article>
+      <article><b>One-hand signs</b><p>👍 hold for a photo · ✌️ next effect · 🖐 freeze the frame.</p></article>
+      <article><b>Masks &amp; 3D</b><p>In the Mask and 3D tabs. By default they appear when the frame passes over a face.</p></article>
+      <article class="desk"><b>Keyboard</b><p><kbd>←</kbd> <kbd>→</kbd> effects · <kbd>P</kbd> photo · <kbd>R</kbd> record · <kbd>F</kbd> freeze · <kbd>D</kbd> tracking · <kbd>?</kbd> help</p></article>
+      <article><b>Tracking tips</b><p>Good light, hands fully in view, about an arm's length from the camera. A plain background helps.</p></article>
+      <article><b>Capture</b><p>The photo and video buttons use a 3 s timer by default (both hands are busy!). Change it in More.</p></article>
+    </div>
+    <button id="replay" class="cta"><i class="dot"></i>Replay the tutorial</button>
+  </section>
   <section id="error" class="glass" role="alertdialog" aria-live="assertive" hidden>
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg>
     <h2></h2>

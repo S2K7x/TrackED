@@ -4,12 +4,44 @@ Frame the world with your fingers. Make an **L with the thumb and index of each 
 
 Everything runs in the browser, on your device. No video leaves it.
 
-## Run locally
+## Quick start (for testers)
+
+**On a computer**
 ```bash
-npm start          # serves the folder at http://localhost:8000
-npm test           # unit tests (geometry, filter, faces, options)
+git clone https://github.com/S2K7x/TrackED.git
+cd TrackED
+git checkout claude/finger-movement-recognition-dnlrra
+npm start                 # serves the app at http://localhost:8000 (Python 3)
+# no Python? `npx serve -l 8000` works too
 ```
-On a phone the camera requires **HTTPS**.
+Open **http://localhost:8000** in Chrome, Edge, Safari or Firefox, click **Start camera** and allow the camera.
+
+**On a phone.** The camera only works on `https://` pages, so expose your local server over HTTPS:
+```bash
+npx localtunnel --port 8000        # or: cloudflared tunnel --url http://localhost:8000
+```
+Open the `https://…` URL it prints on your phone. Tip: Add to Home Screen gives a full-screen app.
+
+**First launch.** A 4-step interactive tutorial starts automatically:
+1. Show both hands.
+2. Make an L with each hand.
+3. Change the effect.
+4. Try a one-hand sign.
+
+Each step validates itself as soon as you succeed. You can skip it and replay it any time from **?** (or the <kbd>?</kbd> key).
+
+**Troubleshooting**
+
+| Problem | Fix |
+|---|---|
+| "Camera access was blocked" | Click the camera icon in the address bar → Allow, then **Try again**. |
+| "The camera is busy" | Close other apps that use the camera (video calls, camera app). |
+| Black screen on a phone | Make sure the URL is `https://`. |
+| The frame doesn't appear | Good light, both hands fully in view, about an arm's length away. The app shows tips when it detects darkness, no hands or one hand. |
+| Slow on an old phone | The app lowers its resolution and model cadence by itself. Avoid combining segmentation (Target), masks and 3D at the same time. |
+| Tracking points / FPS | Press <kbd>D</kbd> or the dots button: render fps, tracking fps, latency and resolution. |
+
+Run the unit tests with `npm test` (Node 20+).
 
 ## Features
 The bottom sheet has five tabs:
@@ -69,6 +101,7 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `src/temporal.js` | Temporal stabilisation of the segmentation mask |
 | `tools/tune-filter.mjs` | One Euro tuning experiment (jitter vs lag) |
 | `src/errors.js` | Camera error mapping, constraint ladder, upload checks, retry with backoff, failure budget |
+| `src/onboarding.js` | Interactive tutorial state machine and contextual hints |
 | `src/device.js` | Device profile: mobile/desktop, performance tier, detection size, model cadence |
 | `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
 | `src/geometry.js` | Builds the quad between the two hands |
@@ -86,6 +119,15 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 - **Your mask:** download the template (mesh wireframe, eyes, lips), paint on it in any editor, export a PNG with transparency, and load it.
 - **Face swap:** the photo goes through MediaPipe in IMAGE mode, and its own landmarks become the texture coordinates. Per-vertex alpha fades the outline and opens the eyes and mouth, so the live eyes blink and the mouth talks. A local colour transfer (live low-pass ÷ photo low-pass) matches skin tone and lighting.
 - **Smoothing:** meshes go through a One Euro filter, with one filter bank per face. On slow devices the last face is kept for about 3 model updates, so masks don't flicker.
+
+## Onboarding
+Designed after hand-tracking onboarding guidance from [Meta](https://developers.meta.com/vr/design/hands-onboarding-best-practices/) and [Ultraleap](https://docs.ultraleap.com/xr-guidelines/Getting%20started/tutorials_hints_tip.html), plus permission-priming practice ([uxcel](https://uxcel.com/lessons/ask-permission-best-practices-607)):
+- **Permission priming.** Before the browser's camera prompt, one sentence explains why the camera is needed and that nothing leaves the device.
+- **Startup checklist.** "Camera" and "Hand tracking model" each show loading, ready or failed, so a slow first model download never looks like a frozen app.
+- **Learn by doing.** Each tutorial step shows a neutral line-art hand animation, stays until you actually perform the gesture (validated from live tracking), then confirms with "Nice!". It can be skipped, is remembered, and can be replayed from the help panel.
+- **Contextual hints** (after the tutorial, one at a time, with a cooldown): too dark (measured camera brightness), no hands for 6 s, only one hand for 5 s, hands too close.
+- **Help panel** (`?`): the frame, signs, masks and 3D, keyboard, tracking tips and capture, plus a "Replay the tutorial" button.
+- **Accessibility.** Visible keyboard focus everywhere, labelled icon buttons, `aria-live` regions for status and tutorial, dialog semantics, and `prefers-reduced-motion` turns animations off.
 
 ## Smart and smooth: tracking quality and performance
 - **Latency compensation.** The camera-to-result delay is measured continuously (moving average). On every rendered frame, the frame's corners are pushed forward along their One Euro filtered velocity by "latency + time since the last result", with a cap of 80 ms. The frame stays glued to the hands instead of trailing behind them. Filtering removes jitter and prediction removes lag, the usual pairing described in the [1€ filter](https://cristal.univ-lille.fr/~casiez/1euro) literature. The One Euro derivative is taken on the raw signal, as in the original paper.
