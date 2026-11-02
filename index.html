@@ -18,6 +18,13 @@
 <link rel="preconnect" href="https://storage.googleapis.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;500;600&display=swap" />
 <link rel="stylesheet" href="src/styles.css" />
+<!-- three.js (3D accessories) is only downloaded when a 3D option is picked -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
 <link rel="modulepreload" href="src/main.js" />
 </head>
 <body>

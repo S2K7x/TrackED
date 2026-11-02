@@ -395,6 +395,19 @@ void main() {
   outColor = vec4(col, a);
 }`;
 
+// Writes stencil = 1 wherever the frame shape covers the pixel (clips the 3D layer).
+const STENCIL_FRAG = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 vUv;
+out vec4 outColor;
+${FRAME_GLSL}
+void main() {
+  vec2 fuv, fw;
+  if (frameDist(vUv, fuv, fw) < 0.0) discard;
+  outColor = vec4(0.0);
+}`;
+
 function compile(gl, type, src) {
   const s = gl.createShader(type);
   gl.shaderSource(s, src);
@@ -430,7 +443,7 @@ const UNIFORMS = [
 export class Renderer {
   constructor(canvas) {
     const gl = canvas.getContext("webgl2", {
-      alpha: false, antialias: false, depth: false, stencil: false,
+      alpha: false, antialias: false, depth: true, stencil: true,   // depth/stencil for the 3D layer
       preserveDrawingBuffer: false, powerPreference: "high-performance",
     });
     if (!gl) throw new Error("WebGL2 is not supported by this browser");
@@ -464,6 +477,47 @@ export class Renderer {
     this.setOverlay(null);
     this.setMask(null);
     this.#initMaskPass();
+    this.stencilProg = link(gl, VERT, STENCIL_FRAG);
+    this.su = {};
+    for (const n of ["uQuad", "uShape", "uFrameAspect"]) this.su[n] = gl.getUniformLocation(this.stencilProg, n);
+  }
+
+  /** Marks the frame area in the stencil buffer (value 1); the 3D layer only draws there. */
+  writeFrameStencil() {
+    const gl = this.gl;
+    gl.useProgram(this.stencilProg);
+    gl.bindVertexArray(this.vao);
+    gl.uniform2fv(this.su.uQuad, this.quadData);
+    gl.uniform1i(this.su.uShape, this.shapeIndex || 0);
+    gl.uniform1f(this.su.uFrameAspect, this.frameAspect || 1);
+    gl.clearStencil(0);
+    gl.clear(gl.STENCIL_BUFFER_BIT);
+    gl.enable(gl.STENCIL_TEST);
+    gl.stencilFunc(gl.ALWAYS, 1, 0xff);
+    gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+    gl.stencilMask(0xff);
+    gl.colorMask(false, false, false, false);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.colorMask(true, true, true, true);
+    gl.disable(gl.STENCIL_TEST);
+  }
+
+  /** three.js shares this context: put back the state our passes rely on. */
+  #resetGL() {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.disable(gl.DEPTH_TEST);
+    gl.disable(gl.STENCIL_TEST);
+    gl.disable(gl.CULL_FACE);
+    gl.disable(gl.BLEND);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.colorMask(true, true, true, true);
+    gl.depthMask(true);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    const units = [this.videoTex, this.overlayTex, this.maskTex, this.frozenTex, this.faceMaskTex];
+    units.forEach((t, i) => { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t); });
   }
 
   #initMaskPass() {
@@ -510,6 +564,7 @@ export class Renderer {
     if (!image) { this.maskOpts = null; return; }
     gl.activeTexture(gl.TEXTURE4);
     gl.bindTexture(gl.TEXTURE_2D, this.faceMaskTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.texBuf);
@@ -558,6 +613,7 @@ export class Renderer {
   /** @param {TexImageSource|null} img */
   setOverlay(img) {
     const gl = this.gl;
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
     if (img) {
@@ -573,6 +629,7 @@ export class Renderer {
   /** @param {{data: Uint8Array, width: number, height: number}|null} mask  category mask */
   setMask(mask) {
     const gl = this.gl;
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -584,6 +641,7 @@ export class Renderer {
   /** Freezes the picture inside the frame (snapshot of the current camera frame), or unfreezes. */
   setFrozen(video) {
     const gl = this.gl;
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     this.frozen = !!video;
     if (!video) return;
     gl.activeTexture(gl.TEXTURE3);
@@ -604,6 +662,7 @@ export class Renderer {
       this.canvas.width = w;
       this.canvas.height = h;
     }
+    this.#resetGL();
     gl.viewport(0, 0, w, h);
     gl.useProgram(this.prog);
     gl.bindVertexArray(this.vao);

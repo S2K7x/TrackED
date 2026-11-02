@@ -34,7 +34,10 @@ self.onmessage = async ({ data }) => {
       bitmap.close();
     }
     const transfer = result.mask ? [result.mask.data.buffer] : [];
-    for (const f of result.faces || []) if (f.mesh) transfer.push(f.mesh.buffer);
+    for (const f of result.faces || []) {
+      if (f.mesh) transfer.push(f.mesh.buffer);
+      if (f.pose) transfer.push(f.pose.buffer);
+    }
     self.postMessage({ type: "result", result, timestamp }, transfer);
   }
 };

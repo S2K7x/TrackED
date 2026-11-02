@@ -81,6 +81,7 @@ export class VisionPipeline {
       numFaces: MAX_FACES,
       minFaceDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5,
+      outputFacialTransformationMatrixes: true, // head pose for 3D accessories
     }).then((t) => (this.faceTask = t), (err) => console.warn("face model failed to load:", err));
   }
 
@@ -96,7 +97,8 @@ export class VisionPipeline {
   /**
    * @param {TexImageSource} image
    * @param {number} ts  strictly increasing timestamp (ms)
-   * @param {{face?: boolean, mesh?: boolean, seg?: boolean}} want  mesh = also return the 468-point mesh
+   * @param {{face?: boolean, mesh?: boolean, pose?: boolean, seg?: boolean}} want
+   *   mesh = also return the 468-point mesh, pose = the 4×4 head pose (canonical face → camera)
    * @returns {{hands: object[][], faces?: object[], mask?: {data: Uint8Array, width: number, height: number}}}
    */
   process(image, ts, want = {}) {
@@ -109,9 +111,11 @@ export class VisionPipeline {
       this.#ensureFace();
       if (this.faceTask) {
         const fr = this.faceTask.detectForVideo(image, ts);
-        out.faces = (fr.faceLandmarks || []).map((lm) => {
+        out.faces = (fr.faceLandmarks || []).map((lm, i) => {
           const f = summarizeFace(lm, aspect);
           if (want.mesh) f.mesh = meshXY(lm);
+          const m = fr.facialTransformationMatrixes?.[i];
+          if (want.pose && m) f.pose = Float32Array.from(m.data);
           return f;
         });
       }

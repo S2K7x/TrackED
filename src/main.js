@@ -24,7 +24,8 @@ const MSG = {
 
 const GROUP_TITLES = {
   effect: "Effect", face: "Face filter", who: "Apply to", target: "Apply effect to",
-  shape: "Frame shape", color: "Color", border: "Border", mask: "Face mask", maskArea: "Show mask",
+  shape: "Frame shape", color: "Color", border: "Border", mask: "Face mask", maskArea: "Show masks & 3D",
+  accessory: "3D accessory", anchor: "Your model sits", size: "Size",
 };
 
 // ---------------- State ----------------
@@ -127,25 +128,30 @@ function renderGroup(group) {
     nodes.push(up);
     return nodes;
   }
-  if (group === "mask") {
-    const nodes = OPTIONS.mask.map((o) => {
+  if (group === "mask" || group === "accessory") {
+    const nodes = OPTIONS[group].map((o) => {
       if (o.upload) {
         const icon = o.upload === "swap"
           ? '<path d="M8 7a4 4 0 1 1 8 0v2a4 4 0 1 1-8 0zM4.5 20c1.2-3.2 4-5 7.5-5s6.3 1.8 7.5 5"/>'
-          : '<path d="M12 16V5M7.5 9.5L12 5l4.5 4.5M5 19h14"/>';
+          : o.upload === "model"
+            ? '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5"/>'
+            : '<path d="M12 16V5M7.5 9.5L12 5l4.5 4.5M5 19h14"/>';
+        const accept = o.upload === "model" ? ".glb,.gltf,model/gltf-binary" : "image/*";
         const b = el("label", { className: "fx upload" + (on(o.value) ? " on" : "") },
-          `<i><svg viewBox="0 0 24 24">${icon}</svg></i>${o.label}<input type="file" accept="image/*">`);
-        b.querySelector("input").addEventListener("change", (e) => onMaskImage(e, o.upload));
+          `<i><svg viewBox="0 0 24 24">${icon}</svg></i>${o.label}<input type="file" accept="${accept}">`);
+        b.querySelector("input").addEventListener("change", (e) => (o.upload === "model" ? onModelFile(e) : onMaskImage(e, o.upload)));
         return b;
       }
       const b = el("button", { className: "fx" + (on(o.value) ? " on" : "") }, `<i></i>${o.label}`);
       b.querySelector("i").style.background = o.tile;
-      b.addEventListener("click", () => set("mask", o.value));
+      b.addEventListener("click", () => set(group, o.value));
       return b;
     });
-    const tpl = el("button", { className: "chip" }, "Download mask template");
-    tpl.addEventListener("click", downloadTemplate);
-    nodes.push(tpl);
+    if (group === "mask") {
+      const tpl = el("button", { className: "chip" }, "Download mask template");
+      tpl.addEventListener("click", downloadTemplate);
+      nodes.push(tpl);
+    }
     return nodes;
   }
   if (group === "shape") {
@@ -180,6 +186,8 @@ function set(key, value, rerender = true) {
   saveSettings();
   if (key === "color") document.documentElement.style.setProperty("--pick", value);
   if (key === "mask" || (key === "color" && COLORED_MASKS.has(settings.mask))) applyMask();
+  if (key === "accessory" || key === "color") applyAccessory();
+  if ((key === "anchor" || key === "size") && settings.accessory === "model") three?.fitUserModel(settings.anchor, Number(settings.size));
   if (rerender) renderChips();
 }
 
@@ -231,6 +239,50 @@ async function downloadTemplate() {
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
   flash("Template saved: paint inside the outline, keep eyes and mouth transparent");
+}
+
+// ---------------- 3D accessories (three.js, loaded on first use) ----------------
+let three = null, threeLoading = null;
+function ensureThree() {
+  if (three) return Promise.resolve(three);
+  if (!renderer) return Promise.resolve(null);
+  threeLoading ??= (async () => {
+    flash("Loading 3D engine…");
+    const { ThreeLayer } = await import("./three-layer.js");
+    three = new ThreeLayer(canvas, renderer.gl);
+    return three;
+  })().catch((err) => { console.error(err); flash("3D is not available on this device"); threeLoading = null; return null; });
+  return threeLoading;
+}
+
+async function applyAccessory() {
+  const a = settings.accessory;
+  if (a === "none") { three?.setAccessory(null); return; }
+  const t = await ensureThree();
+  if (!t) return;
+  if (a === "model") {
+    if (t.userModel) t.fitUserModel(settings.anchor, Number(settings.size));
+    else t.setAccessory(null);
+  } else {
+    t.setAccessory(a, settings.color);
+  }
+}
+
+async function onModelFile(e) {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f || !renderer) return;
+  const t = await ensureThree();
+  if (!t) return;
+  flash("Loading your model…");
+  try {
+    await t.loadModel(await f.arrayBuffer(), settings.anchor, Number(settings.size));
+    set("accessory", "model");
+    flash("Model ready. Pick where it sits below.");
+  } catch (err) {
+    console.error(err);
+    flash("Couldn't read that model. Use a single .glb file.");
+  }
 }
 
 /** Smooths each face mesh with One Euro filters (faces are matched by position). */
@@ -439,6 +491,7 @@ async function start() {
   }
   capture = new Capture(canvas, (msg) => flash(msg));
   applyMask();
+  applyAccessory();
   tracker = new HandTracker({ detectWidth: device.detectWidth });
   keepAwake();
   tracker.onResult = onVision;
@@ -516,6 +569,13 @@ function onFrame() {
       renderer.drawMasks(fs.faces, { inFrame, alpha: inFrame ? fs.alpha : 1, mirror: fs.mirror });
     }
   }
+  if (three?.active) {
+    const inFrame = settings.maskArea === "frame";
+    if (!inFrame || (fs.quad && fs.alpha > 0.05)) {
+      if (inFrame) renderer.writeFrameStencil();
+      three.render(fs.faces, { width: canvas.width, height: canvas.height, mirror: fs.mirror, inFrame, time: fs.time });
+    }
+  }
   capture.afterDraw(); // photo snapshot must happen right after drawing (drawing buffer isn't preserved)
   if (state.debug) drawDebug();
   countFps(t);
@@ -528,15 +588,16 @@ function onFrame() {
  */
 function extrasWanted() {
   const mesh = settings.mask !== "none" && (settings.mask !== "custom" && settings.mask !== "swap" || !!userMasks[settings.mask]);
-  const maskAlways = mesh && settings.maskArea === "always";
+  const pose = settings.accessory !== "none" && !!three?.active;
+  const maskAlways = (mesh || pose) && settings.maskArea === "always";
   if (!state.quad && !maskAlways) return {};
-  const face = settings.face !== "none" || mesh;
+  const face = settings.face !== "none" || mesh || pose;
   const seg = !!state.quad && TARGETS[settings.target] != null;
   if (!face && !seg) return {};
   state.frameNo++;
   if (state.frameNo % extrasEvery) return {};          // device-dependent cadence
-  if (face && seg) return (state.frameNo / extrasEvery) % 2 ? { face: true, mesh } : { seg: true };
-  return { face, mesh, seg };
+  if (face && seg) return (state.frameNo / extrasEvery) % 2 ? { face: true, mesh, pose } : { seg: true };
+  return { face, mesh, pose, seg };
 }
 
 function frameState(time) {
@@ -660,4 +721,4 @@ document.addEventListener("visibilitychange", () => {
 });
 
 // test hook (used by automated browser tests only)
-window.__tracked = { state, settings, set, onVision: (...a) => onVision(...a), get renderer() { return renderer; } };
+window.__tracked = { state, settings, set, onVision: (...a) => onVision(...a), get renderer() { return renderer; }, get three() { return three; } };

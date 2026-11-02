@@ -19,6 +19,7 @@ The bottom sheet has five tabs:
 | **Effect** | None, Neon, Tint, Thermal, Cartoon, Glitch, Pixel, Kaleido, Loupe ×2, Invert, Mono, Image (plus your own image) |
 | **Face** | Big eyes, Big mouth, Alien, Balloon head, Tiny face, Swirl, Laser eyes, Anonymize. Applied to **everyone**, **me** (the closest face) or **others** (up to 4 faces), and only while they are inside the frame |
 | **Mask** | Face masks that follow your face in 3D: Wireframe, Visor, Skull, Gold, Feline, War paint (all original designs), **Your mask** (any image painted on the downloadable template) and **Face swap** (pick a photo: its face is mapped onto yours with live lighting). Shown inside the frame only, or always on |
+| **3D** | 3D accessories locked to your head pose: Crown, Halo, Shades, Horns, Party hat, Mohawk, Cat ears (original models built from primitives), or **your own `.glb` model** placed on the head, on the eyes or around the head, at 75 to 150% size |
 | **Target** | Limits the colour effect to: Everything, People, Background, Skin, Hair or Clothes (person segmentation) |
 | **Shape** | Rectangle, Rounded, Ellipse, Circle, Heart, Star, Diamond |
 | **Color** | 9 presets plus a custom picker (drives Neon, Tint, the border and laser eyes); neon, animated rainbow, thick or no border |
@@ -60,6 +61,8 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `src/masks.js` | Built-in masks painted in UV space, mask template, face-swap fade |
 | `src/face-mesh-data.js` | Generated canonical mesh data (UVs, triangles, contours) |
 | `tools/gen-face-mesh.mjs` | Generator for the mesh data |
+| `src/three-layer.js` | three.js layer: head pose, camera, occluder, pose smoothing, user models |
+| `src/accessories.js` | Built-in 3D accessories |
 | `src/device.js` | Device profile: mobile/desktop, performance tier, detection size, model cadence |
 | `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
 | `src/geometry.js` | Builds the quad between the two hands |
@@ -78,6 +81,16 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 - **Face swap:** the photo goes through MediaPipe in IMAGE mode, and its own landmarks become the texture coordinates. Per-vertex alpha fades the outline and opens the eyes and mouth, so the live eyes blink and the mouth talks. A local colour transfer (live low-pass ÷ photo low-pass) matches skin tone and lighting.
 - **Smoothing:** meshes go through a One Euro filter, with one filter bank per face. On slow devices the last face is kept for about 3 model updates, so masks don't flicker.
 
+## 3D accessories: how they work
+- The Face Landmarker runs with `outputFacialTransformationMatrixes`. For each face it returns a 4×4 head pose that maps the canonical face model (centimetres, y up, z towards the camera, origin near the centre of the head) into camera space.
+- A three.js `PerspectiveCamera` with a 63° vertical field of view (MediaPipe's virtual camera) projects that pose onto the video. In testing, the projected canonical nose tip landed within 0.5% of the detected nose landmark.
+- **One shared WebGL context.** three.js renders into the same canvas after the 2D effects and face masks, so photos and recordings include the 3D. Both renderers reset GL state before drawing (`resetState()` on the three.js side, an explicit reset on ours).
+- **Head occluder.** An invisible, depth-only ellipsoid sits where the head is, so the back of a crown, the arms of the glasses or a hat brim correctly disappear behind your head.
+- **Frame clipping.** A stencil pass writes the frame shape (same SDF code), and accessory materials only draw where stencil = 1.
+- **Pose smoothing.** Position follows faster when you move fast and smooths more when you are still. Rotation uses an adaptive slerp.
+- **Your own models.** Load a `.glb` file (Draco-compressed meshes are supported). It is centred, scaled to the head and anchored on the head, on the eyes or around the head.
+- three.js (`three@0.160.0`, through an import map) is only downloaded the first time a 3D option is picked.
+
 ## How it works
 - **Rendering is fully on the GPU.** The camera frame is a texture. For each pixel, the shader inverts the bilinear mapping of the frame quad to get (u, v) inside the frame. That gives anti-aliased edges, a glowing border and a perspective-warped overlay image, without any `getImageData`.
 - **Shapes** are signed distance functions (Inigo Quilez's 2D SDFs) evaluated in the frame's (u, v) space. `fwidth()` converts the distance to screen pixels for a crisp edge on every shape.
@@ -92,3 +105,4 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 ## Credits
 - Face, hand and segmentation models and the canonical face mesh: [Google MediaPipe](https://github.com/google-ai-edge/mediapipe), Apache License 2.0.
 - 2D signed distance functions: Inigo Quilez.
+- 3D rendering: [three.js](https://threejs.org), MIT License.
