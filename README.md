@@ -59,7 +59,7 @@ The bottom sheet has five tabs:
 | **Effect** | None, Neon, Tint, Thermal, Cartoon, Glitch, Pixel, Kaleido, Loupe ×2, Invert, Mono, Image (plus your own image) |
 | **Face** | Big eyes, Big mouth, Alien, Balloon head, Tiny face, Swirl, Laser eyes, Anonymize. Applied to **everyone**, **me** (the closest face) or **others** (up to 4 faces), and only while they are inside the frame |
 | **Mask** | Face masks that follow your face in 3D: Wireframe, Visor, Skull, Gold, Feline, War paint (all original designs), **Your mask** (any image painted on the downloadable template) and **Face swap** (pick a photo: its face is mapped onto yours with live lighting). Three display modes (shared with 3D): **Appear & disappear**, **Inside the frame** or **Always on** (see below) |
-| **3D** | 3D accessories locked to your head pose: Crown, Halo, Shades, Horns, Party hat, Mohawk, Cat ears (original models built from primitives), or **your own `.glb` model** placed on the head, on the eyes or around the head, at 75 to 150% size |
+| **3D** | 3D accessories locked to your head pose: Crown, Halo, Shades, Horns, Party hat, Mohawk, Cat ears (original models built from primitives), or **your own `.glb` model** placed on the head, on the eyes, around the head or **as modelled** on the Blender reference head, at 75 to 150% size, then fine-tuned with sliders (offset, rotation, scale; saved per model) |
 | **Target** | Limits the colour effect to: Everything, People, Background, Skin, Hair or Clothes (person segmentation) |
 | **Shape** | Rectangle, Rounded, Ellipse, Circle, Heart, Star, Diamond |
 | **Color** | 9 presets plus a custom picker (drives Neon, Tint, the border and laser eyes); neon, animated rainbow, thick or no border |
@@ -104,6 +104,7 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `tools/gen-face-mesh.mjs` | Generator for the mesh data |
 | `src/three-layer.js` | three.js layer: head pose, camera, occluder, pose smoothing, user models |
 | `src/accessories.js` | Built-in 3D accessories |
+| `src/model-fit.js` | Fine-tune values for "Your 3D model", clamping and per-model storage |
 | `src/gestures.js` | One-hand sign classifier (👍 ✌️ 🖐) and hold debouncing |
 | `sw.js` | Service worker: model / library caching, offline |
 | `src/temporal.js` | Temporal stabilisation of the segmentation mask |
@@ -183,6 +184,8 @@ Every failure the app can hit in the real world has a defined behaviour, and eac
 - **Head occluder.** An invisible, depth-only ellipsoid sits where the head is, so the back of a crown, the arms of the glasses or a hat brim correctly disappear behind your head.
 - **Pose smoothing.** Position follows faster when you move fast and smooths more when you are still. Rotation uses an adaptive slerp.
 - **Your own models.** Load a `.glb` file (Draco-compressed meshes are supported). It is centred, scaled to the head and anchored on the head, on the eyes or around the head.
+- **Fine-tune.** Once a model is loaded, the 3D tab shows sliders for left/right, down/up, back/front (cm), tilt, turn, roll (degrees) and scale. Changes apply live and the model shows on your face for a few seconds while you adjust, whatever the display mode. The fit is saved per model file (keyed by a hash of the file), so loading the same `.glb` again restores it. Double-click a slider to reset that value.
+- **Blender reference head.** "Download Blender head" in the 3D tab gives `assets/reference/tracked-reference-head.blend`: the exact face surface the app tracks (MediaPipe's canonical face, real size, facing −Y) plus a skull guide and landmark markers. Model your hat, helmet or glasses around it, export a `.glb` (+Y up, the default), load it and pick **As modelled (Blender head)**: it sits exactly where you modelled it. Objects named `TrackED_Reference*` are ignored if you forget to hide them. See `assets/reference/README.md`.
 - three.js (`three@0.160.0`, through an import map) is only downloaded the first time a 3D option is picked.
 
 ## How it works

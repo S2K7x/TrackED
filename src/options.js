@@ -58,6 +58,7 @@ export const OPTIONS = {
     { value: "top", label: "On the head" },
     { value: "eyes", label: "On the eyes" },
     { value: "head", label: "Around the head" },
+    { value: "ref", label: "As modelled (Blender head)" },
   ],
   size: [
     { value: "0.75", label: "75%" },
@@ -123,12 +124,15 @@ export const TABS = [
   { id: "effect", label: "Effect", groups: ["effect"] },
   { id: "face", label: "Face", groups: ["face", "who"] },
   { id: "mask", label: "Mask", groups: ["mask", "maskArea"] },
-  { id: "3d", label: "3D", groups: ["accessory", "anchor", "size"] },
+  { id: "3d", label: "3D", groups: ["accessory", "anchor", "size", "fit"] },
   { id: "target", label: "Target", groups: ["target"] },
   { id: "shape", label: "Shape", groups: ["shape"] },
   { id: "color", label: "Color", groups: ["color", "border"] },
   { id: "more", label: "More", groups: ["timer", "gesture", "signs"] },
 ];
+
+/** Tab groups drawn by custom UI (sliders) instead of OPTIONS chips. */
+export const PANEL_GROUPS = ["fit"];
 
 export const DEFAULTS = {
   effect: "neon",

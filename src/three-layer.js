@@ -63,23 +63,31 @@ export class ThreeLayer {
   /**
    * Loads a user .glb / .gltf and fits it to the head.
    * @param {ArrayBuffer} data
-   * @param {"top"|"eyes"|"head"} anchor  hat, glasses/face, or helmet
+   * @param {"top"|"eyes"|"head"|"ref"} anchor  hat, glasses/face, helmet, or as modelled on the Blender reference head
    */
-  async loadModel(data, anchor = "top", scale = 1) {
+  async loadModel(data, anchor = "top", scale = 1, fit = null) {
     const loader = new GLTFLoader();
     const draco = new DRACOLoader();
     draco.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.7/");
     loader.setDRACOLoader(draco);
     const gltf = await loader.parseAsync(data, "");
     draco.dispose();
-    this.userModel = gltf.scene;
-    this.fitUserModel(anchor, scale);
+    this.userModel = stripReference(gltf.scene);
+    this.fitUserModel(anchor, scale, fit);
   }
 
   /** Re-fits the loaded model (anchor / size changed). */
-  fitUserModel(anchor = "top", scale = 1) {
+  fitUserModel(anchor = "top", scale = 1, fit = null) {
     if (!this.userModel) return;
-    this.#setTemplate(fitToHead(THREE, this.userModel, anchor, scale));
+    this.#setTemplate(fitToHead(THREE, this.userModel, anchor, scale, fit));
+  }
+
+  /** Live fine adjustment of the user model (offsets in cm, rotations in degrees), no rebuild. */
+  setUserFit(fit) {
+    for (const head of this.heads) {
+      const adj = head.userData.acc?.getObjectByName("fit");
+      if (adj) applyFit(adj, fit);
+    }
   }
 
   #setTemplate(obj) {
@@ -202,9 +210,19 @@ class PoseSmoother {
  * top: bottom of the model sits on the top of the head (hats, hair)
  * eyes: centred on the eyes, in front of the face (glasses, masks)
  * head: centred on the whole head, slightly larger than it (helmets)
+ * ref: as modelled around the Blender reference head (metres, y up, face towards +z), no auto fit
+ * `fit` (optional) is the user's fine adjustment, applied around the model's centre.
+ *
+ * Hierarchy: g (reveal pop-in scale) > adj "fit" (anchor + offset, rotation, scale) > wrap (auto size) > model (centred)
  */
-export function fitToHead(THREE, model, anchor, scale = 1) {
+export function fitToHead(THREE, model, anchor, scale = 1, fit = null) {
   const obj = model.clone(true);
+  if (anchor === "ref") {
+    const wrap = new THREE.Group();
+    wrap.add(obj);
+    wrap.scale.setScalar(100 * scale);      // metres → canonical centimetres
+    return wrapFit(THREE, wrap, [0, 0, 0], fit);
+  }
   const box = new THREE.Box3().setFromObject(obj);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
@@ -214,10 +232,43 @@ export function fitToHead(THREE, model, anchor, scale = 1) {
   obj.position.sub(center);                 // centre at origin
   wrap.add(obj);
   wrap.scale.setScalar(k);
-  if (anchor === "top") wrap.position.set(0, 9.6 + (size.y * k) / 2, -1.5);
-  else if (anchor === "eyes") wrap.position.set(0, 2.7, 4.5);
-  else wrap.position.set(0, 1.5, -2.2);
+  const base = anchor === "top" ? [0, 9.6 + (size.y * k) / 2, -1.5]
+    : anchor === "eyes" ? [0, 2.7, 4.5]
+      : [0, 1.5, -2.2];
+  return wrapFit(THREE, wrap, base, fit);
+}
+
+function wrapFit(THREE, wrap, base, fit) {
+  const adj = new THREE.Group();
+  adj.name = "fit";
+  adj.userData.base = base;
+  adj.add(wrap);
+  applyFit(adj, fit);
   const g = new THREE.Group();
-  g.add(wrap);
+  g.add(adj);
   return g;
+}
+
+/**
+ * Drops the Blender reference head (objects named TrackED_Reference*) when users
+ * export it along with their accessory. A file with nothing else keeps it, so the
+ * reference .glb itself can be previewed.
+ */
+export function stripReference(scene) {
+  const ref = [];
+  scene.traverse((o) => { if (o.name.startsWith("TrackED_Reference")) ref.push(o); });
+  let other = false;
+  scene.traverse((o) => { if (o.isMesh && !ref.some((r) => r === o || isInside(o, r))) other = true; });
+  if (other) for (const o of ref) o.removeFromParent();
+  return scene;
+}
+function isInside(o, root) { for (let p = o.parent; p; p = p.parent) if (p === root) return true; return false; }
+
+const DEG = Math.PI / 180;
+function applyFit(adj, fit) {
+  const [bx, by, bz] = adj.userData.base;
+  const f = fit || {};
+  adj.position.set(bx + (f.x || 0), by + (f.y || 0), bz + (f.z || 0));
+  adj.rotation.set((f.rx || 0) * DEG, (f.ry || 0) * DEG, (f.rz || 0) * DEG, "YXZ");
+  adj.scale.setScalar(f.scale || 1);
 }

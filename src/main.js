@@ -10,6 +10,7 @@ import { drawSpark, drawWaves } from "./art.js";
 import { deviceProfile } from "./device.js";
 import { classifySign, SignHold } from "./gestures.js";
 import { Tutorial, STEPS, pickHint, HINTS } from "./onboarding.js";
+import { FIT_FIELDS, DEFAULT_FIT, FitStore, modelKey, clampFit, isDefaultFit } from "./model-fit.js";
 import { describeCameraError, constraintLadder, checkUpload, fitTextureSize, FailureBudget } from "./errors.js";
 
 const $ = (s) => document.querySelector(s);
@@ -28,7 +29,7 @@ const MSG = {
 const GROUP_TITLES = {
   effect: "Effect", face: "Face filter", who: "Apply to", target: "Apply effect to",
   shape: "Frame shape", color: "Color", border: "Border", mask: "Face mask", maskArea: "Show masks & 3D",
-  accessory: "3D accessory", anchor: "Your model sits", size: "Size",
+  accessory: "3D accessory", anchor: "Your model sits", size: "Size", fit: "Fine-tune your model",
   timer: "Capture timer", gesture: "Pinch gesture", signs: "One-hand signs",
 };
 
@@ -49,6 +50,7 @@ const state = {
   latency: 60,        // ms between camera capture and tracking result (EMA)
   quadAt: 0,          // performance.now() of the last two-hand detection
   handsSeenAt: 0,     // last time any hand was visible (power saving)
+  previewUntil: 0,    // while fine-tuning a 3D model, it shows on every face (live preview)
 };
 
 const FADE_IN = 8;        // alpha units per second
@@ -112,11 +114,13 @@ function renderChips() {
   document.documentElement.style.setProperty("--pick", settings.color);
   const tab = TABS.find((t) => t.id === activeTab);
   const nodes = [];
-  tab.groups.forEach((group, gi) => {
-    if (gi > 0) nodes.push(el("span", { className: "sep" }));
+  tab.groups.forEach((group) => {
+    const items = renderGroup(group);
+    if (!items.length) return;                // e.g. the fit panel before a model is loaded
+    if (nodes.length) nodes.push(el("span", { className: "sep" }));
     // the wrapper is `display: contents` on mobile (one scrolling row) and a titled section on desktop
     const g = el("div", { className: `group g-${group}` });
-    g.append(el("h3", { className: "group-title", textContent: GROUP_TITLES[group] }), ...renderGroup(group));
+    g.append(el("h3", { className: "group-title", textContent: GROUP_TITLES[group] }), ...items);
     nodes.push(g);
   });
   chipsEl.replaceChildren(...nodes);
@@ -161,9 +165,13 @@ function renderGroup(group) {
       const tpl = el("button", { className: "chip" }, "Download mask template");
       tpl.addEventListener("click", downloadTemplate);
       nodes.push(tpl);
+    } else {
+      // Blender scene with the exact head the app tracks: model around it, export .glb, pick "As modelled"
+      nodes.push(el("a", { className: "chip", href: "assets/reference/tracked-reference-head.blend", download: "" }, "Download Blender head"));
     }
     return nodes;
   }
+  if (group === "fit") return renderFitPanel();
   if (group === "shape") {
     return OPTIONS.shape.map((o) => {
       const b = el("button", { className: "shape" + (on(o.value) ? " on" : "") }, `<svg viewBox="0 0 24 24">${o.icon}</svg>${o.label}`);
@@ -198,7 +206,7 @@ function set(key, value, rerender = true) {
   if (key === "color") document.documentElement.style.setProperty("--pick", value);
   if (key === "mask" || (key === "color" && COLORED_MASKS.has(settings.mask))) applyMask();
   if (key === "accessory" || key === "color") applyAccessory();
-  if ((key === "anchor" || key === "size") && settings.accessory === "model") three?.fitUserModel(settings.anchor, Number(settings.size));
+  if ((key === "anchor" || key === "size") && settings.accessory === "model") three?.fitUserModel(settings.anchor, Number(settings.size), modelFit);
   if (rerender) renderChips();
 }
 
@@ -273,7 +281,7 @@ async function applyAccessory() {
   const t = await ensureThree();
   if (!t) return;
   if (a === "model") {
-    if (t.userModel) t.fitUserModel(settings.anchor, Number(settings.size));
+    if (t.userModel) t.fitUserModel(settings.anchor, Number(settings.size), modelFit);
     else t.setAccessory(null);
   } else {
     t.setAccessory(a, settings.color);
@@ -292,16 +300,67 @@ async function onModelFile(e) {
   flash("Loading your model…");
   try {
     const buf = await f.arrayBuffer();
-    await t.loadModel(buf.slice(0), settings.anchor, Number(settings.size));
+    const id = modelKey(buf);
+    const fit = fitStore.get(id);
+    await t.loadModel(buf.slice(0), settings.anchor, Number(settings.size), fit);
     lastModel = buf;
+    modelId = id;
+    modelFit = fit;
+    state.previewUntil = performance.now() + PREVIEW_MS;
     set("accessory", "model");
-    flash("Model ready. Pick where it sits below.");
+    flash(isDefaultFit(fit) ? "Model ready. Pick where it sits and fine-tune it below." : "Model ready, with your saved fit.");
   } catch (err) {
     console.error(err);
     flash(f.name.toLowerCase().endsWith(".gltf")
       ? "This .gltf needs separate files. Export a single .glb instead."
       : "Couldn't read that model. Try exporting it again as .glb.");
   }
+}
+
+// ---------------- Fine-tune "Your 3D model" (saved per model) ----------------
+const PREVIEW_MS = 4000;
+const fitStore = new FitStore((() => { try { return localStorage; } catch { return null; } })());
+let modelId = null, modelFit = { ...DEFAULT_FIT }, fitSaveTimer = 0;
+
+function renderFitPanel() {
+  if (settings.accessory !== "model" || !three?.userModel) return [];
+  const fmt = (f, v) => `${f.step < 1 ? v.toFixed(f.step < 0.1 ? 2 : 1) : v}${f.unit}`;
+  const nodes = FIT_FIELDS.map((f) => {
+    const n = el("label", { className: "fit" },
+      `<span>${f.label}<output></output></span><input type="range" min="${f.min}" max="${f.max}" step="${f.step}">`);
+    const input = n.querySelector("input"), out = n.querySelector("output");
+    input.value = modelFit[f.key];
+    out.textContent = fmt(f, modelFit[f.key]);
+    input.addEventListener("input", () => {
+      modelFit = clampFit({ ...modelFit, [f.key]: Number(input.value) });
+      out.textContent = fmt(f, modelFit[f.key]);
+      onFitChanged();
+    });
+    // double-click / double-tap a slider to reset just that value
+    input.addEventListener("dblclick", () => {
+      modelFit = { ...modelFit, [f.key]: DEFAULT_FIT[f.key] };
+      input.value = modelFit[f.key];
+      out.textContent = fmt(f, modelFit[f.key]);
+      onFitChanged();
+    });
+    return n;
+  });
+  const reset = el("button", { className: "chip" }, "Reset fit");
+  reset.addEventListener("click", () => { modelFit = { ...DEFAULT_FIT }; onFitChanged(); renderChips(); });
+  nodes.push(reset);
+  return nodes;
+}
+
+function onFitChanged() {
+  three?.setUserFit(modelFit);
+  state.previewUntil = performance.now() + PREVIEW_MS;
+  clearTimeout(fitSaveTimer);
+  fitSaveTimer = setTimeout(() => { if (modelId) fitStore.set(modelId, modelFit); }, 300);
+}
+
+/** Where masks & 3D show; forced to "always" for a few seconds while fine-tuning a model. */
+function maskArea() {
+  return settings.accessory === "model" && performance.now() < state.previewUntil ? "always" : settings.maskArea;
 }
 
 /** Smooths each face mesh with One Euro filters (faces are matched by position). */
@@ -769,7 +828,7 @@ function watchContextLoss() {
       if (state.overlayImage) renderer.setOverlay(state.overlayImage);
       applyMask();
       $("#freeze").classList.remove("on");
-      if (three) { const buf = lastModel; three = null; threeLoading = null; if (settings.accessory !== "none") await applyAccessory(); if (buf && settings.accessory === "model") await (await ensureThree())?.loadModel(buf.slice(0), settings.anchor, Number(settings.size)); }
+      if (three) { const buf = lastModel; three = null; threeLoading = null; if (settings.accessory !== "none") await applyAccessory(); if (buf && settings.accessory === "model") await (await ensureThree())?.loadModel(buf.slice(0), settings.anchor, Number(settings.size), modelFit); }
       glLost = false;
       showStatus("");
     } catch (err) {
@@ -831,12 +890,12 @@ function renderFrame() {
   const t = performance.now();
   // power saving: with no hand in sight for 3 s, track every other frame (a hand
   // entering the picture is still picked up within ~70 ms)
-  const idle = t - state.handsSeenAt > 3000 && !(settings.maskArea === "always" && (settings.mask !== "none" || settings.accessory !== "none"));
+  const idle = t - state.handsSeenAt > 3000 && !(maskArea() === "always" && (settings.mask !== "none" || settings.accessory !== "none"));
   if (!idle || (state.idleTick = !state.idleTick)) tracker.submit(video, t, extrasWanted());
   update(t / 1000);
   const fs = frameState(t / 1000);
   renderer.draw(video, fs);
-  const area = settings.maskArea;
+  const area = maskArea();
   if (settings.mask !== "none") {
     const inFrame = area === "frame";
     if (!inFrame || (fs.quad && fs.alpha > 0)) {
@@ -866,7 +925,7 @@ function renderFrame() {
 function extrasWanted() {
   const mesh = settings.mask !== "none" && (settings.mask !== "custom" && settings.mask !== "swap" || !!userMasks[settings.mask]);
   const pose = settings.accessory !== "none" && !!three?.active;
-  const maskAlways = (mesh || pose) && settings.maskArea === "always";
+  const maskAlways = (mesh || pose) && maskArea() === "always";
   if (!state.quad && !maskAlways) return {};
   const face = settings.face !== "none" || mesh || pose;
   const seg = !!state.quad && TARGETS[settings.target] != null;
@@ -1002,8 +1061,9 @@ function update(t) {
   lastUpdate = t;
   // "When the frame is on a face": each face fades in while the frame covers it, out when it leaves
   const frameOn = state.quad && state.alpha > 0.5 && !state.collapsed;
+  const area = maskArea();
   state.faces.forEach((f, i) => {
-    const target = settings.maskArea !== "face" || (frameOn && faceInFrame(f, state.quad)) ? 1 : 0;
+    const target = area !== "face" || (frameOn && faceInFrame(f, state.quad)) ? 1 : 0;
     const r = state.reveal[i] ?? 0;
     // frame-rate independent easing: ~0.25 s to appear, ~0.35 s to disappear
     const k = 1 - Math.exp(-dt * (target > r ? 12 : 9));
@@ -1091,4 +1151,4 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || location.
 }
 
 // test hook (used by automated browser tests only)
-window.__tracked = { state, settings, set, onVision: (...a) => onVision(...a), get renderer() { return renderer; }, get three() { return three; }, get tracker() { return tracker; } };
+window.__tracked = { state, settings, set, get modelFit() { return modelFit; }, onVision: (...a) => onVision(...a), get renderer() { return renderer; }, get three() { return three; }, get tracker() { return tracker; } };

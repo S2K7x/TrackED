@@ -160,6 +160,12 @@ video { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: no
 .chip input { display: none; }
 .sep { flex: 0 0 1px; height: 28px; background: rgba(20,20,19,.12); margin: 0 6px; }
 
+/* 3D model fine-tune sliders */
+.fit { flex: 0 0 150px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 500; color: var(--ink-2); }
+.fit span { display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
+.fit output { color: var(--ink); font-variant-numeric: tabular-nums; }
+.fit input { width: 100%; margin: 0; accent-color: var(--ink); touch-action: pan-y; }
+
 /* effect tiles */
 .fx { flex: 0 0 auto; width: 74px; border: 0; background: none; padding: 0; display: flex; flex-direction: column; gap: 6px;
   align-items: center; font-size: 12px; font-weight: 500; color: var(--ink-2); }
@@ -309,6 +315,9 @@ video { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: no
   .g-shape { display: grid; grid-template-columns: repeat(4, 1fr); }
   .g-shape .group-title { grid-column: 1 / -1; }
   .g-shape .shape { width: auto; }
+  .g-fit { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+  .g-fit .group-title, .g-fit .chip { grid-column: 1 / -1; }
+  .g-fit .chip { justify-self: start; }
   .chip:hover:not(.on), .shape:hover:not(.on) { background: rgba(255,255,255,.85); }
   .fx:hover i { transform: translateY(-2px); }
   .shortcuts { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 12px 18px 14px; border-top: 1px solid rgba(20,20,19,.08);

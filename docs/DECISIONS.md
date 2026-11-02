@@ -11,6 +11,9 @@
 | Masks drawn in **canonical UV space** (MediaPipe canonical mesh) | One texture works on every face, and users can paint on a template |
 | 3D with **three.js sharing the same WebGL context**, rendered into an **MSAA render target** then composited | Photos and recordings include the 3D; smooth edges without canvas antialiasing; smooth fades and an anti-aliased frame clip |
 | Display modes for masks/3D: **Appear & disappear** (default), **Inside the frame**, **Always on** | Owner wanted accessories to appear in full when the frame passes over a face, with all three options available, and smooth transitions |
+| 3D model fine-tune = an extra "fit" group between the reveal pop-in scale and the auto-fit, rotating around the anchor point | Live slider updates without rebuilding the model; the reveal animation keeps working |
+| Fits stored per model, keyed by size + FNV-1a of the first and last 128 kB | Same file → same fit after reload, without hashing a 60 MB file; at most 20 models kept |
+| Blender reference head in **metres, Z up, facing −Y**; "As modelled" anchor scales ×100 and skips the auto-fit | Blender's default units and glTF exporter (+Y up) give back MediaPipe's canonical space exactly (checked: exported bounds = canonical ÷ 100) |
 | One-hand signs from landmark geometry instead of MediaPipe Gesture Recognizer | Avoids a second model; signs are only read with one hand visible so they never clash with the frame |
 | `main` auto-updated by GitHub Actions from `claude/**` branches after tests pass | Owner wanted `main` to always be up to date automatically |
 
@@ -25,6 +28,7 @@
 | Mask stabilizer could lock a pixel / read a recycled buffer | History stored corrected masks and was overwritten before being read | History holds raw masks, single-pass read-then-recycle |
 | Watchdog killed a healthy worker | WASM compile during model warm-up blocks the worker for seconds | Worker reports `loading`; watchdog ignores slow frames while loading |
 | Name clash `maskTex` | Segmentation and face-mask textures shared a field | Renamed `faceMaskTex` |
+| Fit restore looked broken in a browser test | `accessory` is persisted as "model", so the test stopped waiting before the reloaded file was parsed | Tests wait for `three.userModel`, not the setting |
 | Instagram UI visible in test screenshots | The test webcam clip was a screen recording of a reel | Cropped clip. The app itself never adds such UI |
 
 ## Tuning results
