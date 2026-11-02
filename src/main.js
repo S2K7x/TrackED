@@ -5,12 +5,20 @@ import { quadFromHands, quadArea, mirrorLandmarks } from "./geometry.js";
 import { mirrorFace, selectFaces, TARGETS } from "./faces.js";
 import { OPTIONS, TABS, DEFAULTS, hexToRgb } from "./options.js";
 import { Capture } from "./capture.js";
+import { drawSpark, drawWaves } from "./art.js";
 
 const $ = (s) => document.querySelector(s);
 const video = $("#cam");
 const canvas = $("#out");
+const stage = $("#stage");
 const debugCanvas = $("#debug-layer");
-const statusEl = $("#status");
+const statusText = $("#status span");
+
+const MSG = {
+  loading: "Loading hand model…",
+  showBoth: "Show both hands in an L shape",
+  showSecond: "Now show your second hand",
+};
 
 // ---------------- State ----------------
 const settings = loadSettings();
@@ -43,7 +51,8 @@ function loadSettings() {
     const saved = JSON.parse(localStorage.getItem("tracked.settings") || "{}");
     const s = { ...DEFAULTS };
     for (const k of Object.keys(DEFAULTS)) {
-      if (k === "color" ? /^#[0-9a-f]{6}$/i.test(saved[k]) : OPTIONS[k]?.some((o) => o.value === saved[k])) s[k] = saved[k];
+      const valid = k === "color" ? /^#[0-9a-f]{6}$/i.test(saved[k]) : OPTIONS[k]?.some((o) => o.value === saved[k]);
+      if (valid) s[k] = saved[k];
     }
     return s;
   } catch {
@@ -54,64 +63,87 @@ function saveSettings() {
   try { localStorage.setItem("tracked.settings", JSON.stringify(settings)); } catch { /* private mode */ }
 }
 
+// ---------------- Decorative line art ----------------
+drawSpark($("#spark-rays"));
+drawWaves($("#waves"));
+
 // ---------------- UI ----------------
 let activeTab = "effect";
 const tabsEl = $("#tabs");
 const chipsEl = $("#chips");
+const el = (tag, props = {}, html) => {
+  const n = Object.assign(document.createElement(tag), props);
+  if (html != null) n.innerHTML = html;
+  return n;
+};
 
 function renderTabs() {
   tabsEl.replaceChildren(...TABS.map((t) => {
-    const b = document.createElement("button");
-    b.textContent = t.label;
-    b.className = t.id === activeTab ? "on" : "";
+    const b = el("button", { className: t.id === activeTab ? "on" : "", role: "tab" }, `<i class="dot"></i>${t.label}`);
+    b.setAttribute("aria-selected", t.id === activeTab);
     b.addEventListener("click", () => { activeTab = t.id; renderTabs(); renderChips(); });
     return b;
   }));
 }
 
 function renderChips() {
+  document.documentElement.style.setProperty("--pick", settings.color);
   const tab = TABS.find((t) => t.id === activeTab);
   const nodes = [];
   tab.groups.forEach((group, gi) => {
-    if (gi > 0) nodes.push(Object.assign(document.createElement("span"), { className: "sep" }));
-    if (group === "color") {
-      for (const c of OPTIONS.color) {
-        const b = document.createElement("button");
-        b.className = "swatch" + (settings.color.toLowerCase() === c.value ? " on" : "");
-        b.style.setProperty("--c", c.value);
-        b.title = c.label;
-        b.setAttribute("aria-label", c.label);
-        b.addEventListener("click", () => set("color", c.value));
-        nodes.push(b);
-      }
-      const pick = document.createElement("label");
-      pick.className = "chip";
-      pick.innerHTML = `🎨 Autre<input type="color" value="${settings.color}">`;
-      pick.querySelector("input").addEventListener("input", (e) => set("color", e.target.value, false));
-      nodes.push(pick);
-      return;
-    }
-    for (const o of OPTIONS[group]) {
-      const b = document.createElement("button");
-      b.className = "chip" + (settings[group] === o.value ? " on" : "");
-      b.textContent = o.label;
-      b.addEventListener("click", () => set(group, o.value));
-      nodes.push(b);
-    }
-    if (group === "effect") {
-      const up = document.createElement("label");
-      up.className = "chip";
-      up.innerHTML = `📷 Image perso<input type="file" accept="image/*">`;
-      up.querySelector("input").addEventListener("change", onImagePicked);
-      nodes.push(up);
-    }
+    if (gi > 0) nodes.push(el("span", { className: "sep" }));
+    nodes.push(...renderGroup(group));
   });
   chipsEl.replaceChildren(...nodes);
+  chipsEl.querySelector(".on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+function renderGroup(group) {
+  const on = (v) => settings[group] === v;
+  if (group === "effect") {
+    const nodes = OPTIONS.effect.map((o) => {
+      const b = el("button", { className: "fx" + (on(o.value) ? " on" : "") }, `<i></i>${o.label}`);
+      b.querySelector("i").style.background = o.tile;
+      b.addEventListener("click", () => set("effect", o.value));
+      return b;
+    });
+    const up = el("label", { className: "fx upload" },
+      `<i><svg viewBox="0 0 24 24"><path d="M12 16V5M7.5 9.5L12 5l4.5 4.5M5 19h14"/></svg></i>Your image<input type="file" accept="image/*">`);
+    up.querySelector("input").addEventListener("change", onImagePicked);
+    nodes.push(up);
+    return nodes;
+  }
+  if (group === "shape") {
+    return OPTIONS.shape.map((o) => {
+      const b = el("button", { className: "shape" + (on(o.value) ? " on" : "") }, `<svg viewBox="0 0 24 24">${o.icon}</svg>${o.label}`);
+      b.addEventListener("click", () => set("shape", o.value));
+      return b;
+    });
+  }
+  if (group === "color") {
+    const nodes = OPTIONS.color.map((c) => {
+      const b = el("button", { className: "swatch" + (settings.color.toLowerCase() === c.value ? " on" : ""), title: c.label });
+      b.style.setProperty("--c", c.value);
+      b.setAttribute("aria-label", c.label);
+      b.addEventListener("click", () => set("color", c.value));
+      return b;
+    });
+    const pick = el("label", { className: "chip" }, `Custom<input type="color" value="${settings.color}">`);
+    pick.querySelector("input").addEventListener("input", (e) => set("color", e.target.value, false));
+    nodes.push(pick);
+    return nodes;
+  }
+  return OPTIONS[group].map((o) => {
+    const b = el("button", { className: "chip" + (on(o.value) ? " on" : "") }, o.label);
+    b.addEventListener("click", () => set(group, o.value));
+    return b;
+  });
 }
 
 function set(key, value, rerender = true) {
   settings[key] = value;
   saveSettings();
+  if (key === "color") document.documentElement.style.setProperty("--pick", value);
   if (rerender) renderChips();
 }
 
@@ -129,17 +161,32 @@ $("#debug").addEventListener("click", (e) => {
   state.debug = !state.debug;
   e.currentTarget.classList.toggle("on", state.debug);
   debugCanvas.hidden = !state.debug;
+  $("#hud").hidden = !state.debug;
 });
 $("#flip").addEventListener("click", async () => {
   state.facing = state.facing === "user" ? "environment" : "user";
   await startCamera();
 });
 $("#photo").addEventListener("click", () => capture?.photo());
+
+let recTimer = null;
 $("#rec").addEventListener("click", (e) => {
   if (!capture) return;
   const on = capture.toggleRecording();
-  e.currentTarget.classList.toggle("rec", on);
-  e.currentTarget.textContent = on ? "⏹ Stop" : "⏺ Vidéo";
+  e.currentTarget.classList.toggle("on", on);
+  const pill = $("#rec-pill");
+  pill.hidden = !on;
+  $("#status").style.visibility = on ? "hidden" : "";
+  clearInterval(recTimer);
+  if (on) {
+    const t0 = performance.now();
+    const tick = () => {
+      const s = Math.floor((performance.now() - t0) / 1000);
+      pill.querySelector("span").textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+    };
+    tick();
+    recTimer = setInterval(tick, 500);
+  }
 });
 
 // swipe left/right on the video to cycle through effects
@@ -159,28 +206,46 @@ renderTabs();
 renderChips();
 $("#go").addEventListener("click", start, { once: true });
 
+// ---------------- Layout: the video is a rounded card, "contain"-fitted ----------------
+function fitStage() {
+  const vw = video.videoWidth || 16, vh = video.videoHeight || 9;
+  const W = innerWidth, H = innerHeight;
+  const s = Math.min(W / vw, H / vh);
+  const full = Math.abs(W - vw * s) < 2 && Math.abs(H - vh * s) < 2;
+  // leave a margin around the card unless the video already fills the screen
+  const m = full ? 0 : Math.min(24, W * 0.03);
+  const k = Math.min((W - 2 * m) / vw, (H - 2 * m) / vh);
+  stage.style.width = `${Math.round(vw * k)}px`;
+  stage.style.height = `${Math.round(vh * k)}px`;
+  stage.style.borderRadius = full ? "0" : "";
+}
+addEventListener("resize", fitStage);
+
 // ---------------- Startup ----------------
 async function start() {
-  $("#start").remove();
+  $("#start").hidden = true;
+  $("#app").hidden = false;
+  fitStage();
   try {
     renderer = new Renderer(canvas);
   } catch (err) {
-    statusEl.textContent = err.message;
+    showStatus(err.message);
     return;
   }
   capture = new Capture(canvas, (msg) => flash(msg));
   tracker = new HandTracker();
   tracker.onResult = onVision;
-  statusEl.textContent = "Chargement du modèle…";
+  showStatus(MSG.loading);
   try {
     const [mode] = await Promise.all([tracker.init(), startCamera()]); // in parallel
     state.trackerMode = mode;
+    $("#hud-mode").textContent = mode === "worker" ? "Web Worker" : "Main thread";
   } catch (err) {
-    statusEl.textContent = "Erreur : " + (err?.message || err);
+    showStatus("Error: " + (err?.message || err));
     console.error(err);
     return;
   }
-  statusEl.textContent = "Montre tes deux mains en forme de L";
+  showStatus(MSG.showBoth);
   scheduleFrame();
 }
 
@@ -192,18 +257,23 @@ async function startCamera() {
   });
   video.srcObject = stream;
   await video.play();
+  fitStage();
   quadFilter.reset();
   state.quad = null;
   state.faces = [];
 }
 
+function showStatus(msg) {
+  if (statusText.textContent !== msg) statusText.textContent = msg;
+}
+
 let flashTimer;
 function flash(msg) {
-  const el = $("#toast");
-  el.textContent = msg;
-  el.hidden = false;
+  const t = $("#toast");
+  t.textContent = msg;
+  t.hidden = false;
   clearTimeout(flashTimer);
-  flashTimer = setTimeout(() => { el.hidden = true; }, 2200);
+  flashTimer = setTimeout(() => { t.hidden = true; }, 2200);
 }
 
 // ---------------- Frame loop ----------------
@@ -284,8 +354,7 @@ function onVision(result, timestampMs) {
     state.missStreak++;
   }
   const n = state.hands.length;
-  const status = n === 2 ? "" : n === 1 ? "Montre ta deuxième main" : "Montre tes deux mains en forme de L";
-  if (statusEl.textContent !== status) statusEl.textContent = status;
+  showStatus(n === 2 ? "" : n === 1 ? MSG.showSecond : MSG.showBoth);
 }
 
 let lastUpdate = 0;
@@ -303,24 +372,25 @@ function update(t) {
 // ---------------- Debug overlay ----------------
 const dctx = debugCanvas.getContext("2d");
 function drawDebug() {
-  const w = canvas.clientWidth, h = canvas.clientHeight, dpr = devicePixelRatio || 1;
-  if (debugCanvas.width !== w * dpr) { debugCanvas.width = w * dpr; debugCanvas.height = h * dpr; }
+  const w = stage.clientWidth, h = stage.clientHeight, dpr = devicePixelRatio || 1;
+  if (debugCanvas.width !== Math.round(w * dpr) || debugCanvas.height !== Math.round(h * dpr)) {
+    debugCanvas.width = Math.round(w * dpr);
+    debugCanvas.height = Math.round(h * dpr);
+  }
   dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   dctx.clearRect(0, 0, w, h);
-  // replicate object-fit: contain
-  const vw = video.videoWidth, vh = video.videoHeight;
-  const s = Math.min(w / vw, h / vh), ox = (w - vw * s) / 2, oy = (h - vh * s) / 2;
-  const dot = (p, size) => dctx.fillRect(ox + p.x * vw * s - size / 2, oy + p.y * vh * s - size / 2, size, size);
-  dctx.fillStyle = "#0f0";
-  for (const lm of state.hands) for (const p of lm) dot(p, 4);
-  dctx.fillStyle = "#0ff";
-  for (const f of state.faces) for (const p of [f.eyeL, f.eyeR, f.mouth, f.nose]) dot(p, 6);
-  dctx.font = "12px ui-monospace, monospace";
-  const text = `rendu ${stats.fps} fps · détection ${stats.dps} fps · ${state.trackerMode} · ${state.faces.length} visage(s)`;
-  dctx.fillStyle = "rgba(0,0,0,.6)";
-  dctx.fillRect(8, 40, dctx.measureText(text).width + 12, 20);
-  dctx.fillStyle = "#0f0";
-  dctx.fillText(text, 14, 54);
+  const dot = (p, r, fill) => {
+    dctx.beginPath();
+    dctx.arc(p.x * w, p.y * h, r, 0, Math.PI * 2);
+    dctx.fillStyle = fill;
+    dctx.fill();
+  };
+  for (const lm of state.hands) for (const p of lm) dot(p, 3, "rgba(255,255,255,.9)");
+  for (const lm of state.hands) for (const i of [4, 8]) dot(lm[i], 5, "#d4ff3a");
+  for (const f of state.faces) for (const p of [f.eyeL, f.eyeR, f.mouth, f.nose]) dot(p, 4, "#d4ff3a");
+  $("#hud-fps").textContent = stats.fps;
+  $("#hud-dps").textContent = stats.dps;
+  $("#hud-faces").textContent = state.faces.length;
 }
 
 function countFps(t) {

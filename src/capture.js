@@ -42,7 +42,7 @@ export class Capture {
       return false;
     }
     if (!this.canvas.captureStream || typeof MediaRecorder === "undefined") {
-      this.notify("Enregistrement vidéo non supporté sur ce navigateur");
+      this.notify("Video recording is not supported in this browser");
       return false;
     }
     const mimeType = pickMime();
@@ -59,7 +59,6 @@ export class Capture {
     };
     rec.start(1000);
     this.recorder = rec;
-    this.notify("Enregistrement…");
     return true;
   }
 }
@@ -85,5 +84,5 @@ async function save(blob, name, notify) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  notify(`Enregistré : ${name}`);
+  notify(`Saved: ${name}`);
 }

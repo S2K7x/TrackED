@@ -1,81 +1,97 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#000000" />
+<meta name="theme-color" content="#eeeeea" />
+<meta name="description" content="Frame the world with your fingers: real-time hand-tracked camera effects in the browser." />
 <title>TrackED</title>
-<!-- warm up connections to the CDNs used for the library, the WASM runtime and the models -->
+<!-- warm up connections to the CDNs used for fonts, the library, the WASM runtime and the models -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link rel="preconnect" href="https://storage.googleapis.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;500;600&display=swap" />
+<link rel="stylesheet" href="src/styles.css" />
 <link rel="modulepreload" href="src/main.js" />
-<style>
-  :root { --bg:#000; --fg:#fff; --accent:#ff2d55; --chip:rgba(0,0,0,.45); --line:rgba(255,255,255,.35); }
-  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
-    font-family:system-ui, -apple-system, sans-serif; overflow:hidden; overscroll-behavior:none; }
-  #out, #debug-layer { position:fixed; inset:0; width:100%; height:100%; }
-  #out { object-fit:contain; touch-action:none; }
-  #debug-layer { pointer-events:none; }
-  video { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
-  button, label.chip { font:inherit; color:#fff; cursor:pointer; }
-
-  #top { position:fixed; top:calc(10px + env(safe-area-inset-top)); right:16px; display:flex; gap:8px; }
-  #top button { border:1px solid var(--line); background:var(--chip); padding:8px 12px; border-radius:999px; font-size:13px; }
-  #top button.on { background:var(--accent); border-color:var(--accent); }
-  #top button.rec { background:#e00; border-color:#e00; animation:pulse 1s infinite alternate; }
-  @keyframes pulse { to { opacity:.6; } }
-
-  #panel { position:fixed; left:0; right:0; bottom:0; padding:8px 0 calc(10px + env(safe-area-inset-bottom));
-    background:linear-gradient(transparent, rgba(0,0,0,.8) 30%); }
-  .row { display:flex; gap:8px; overflow-x:auto; padding:4px 16px; scrollbar-width:none; align-items:center; }
-  .row::-webkit-scrollbar { display:none; }
-  #tabs button { flex:0 0 auto; border:0; background:none; padding:6px 8px; font-size:14px; font-weight:600; opacity:.6;
-    border-bottom:2px solid transparent; }
-  #tabs button.on { opacity:1; border-bottom-color:var(--accent); }
-  .chip { flex:0 0 auto; border:1px solid var(--line); background:var(--chip); padding:9px 13px; border-radius:999px;
-    font-size:14px; white-space:nowrap; }
-  .chip.on { background:var(--accent); border-color:var(--accent); }
-  .chip input { display:none; }
-  .swatch { flex:0 0 auto; width:34px; height:34px; border-radius:50%; background:var(--c); border:2px solid rgba(255,255,255,.5); padding:0; }
-  .swatch.on { border:3px solid #fff; box-shadow:0 0 0 2px var(--c); }
-  .sep { flex:0 0 1px; height:24px; background:var(--line); margin:0 4px; }
-
-  #status { position:fixed; top:calc(54px + env(safe-area-inset-top)); left:16px; right:16px; text-align:center;
-    font-size:14px; text-shadow:0 1px 3px #000; pointer-events:none; }
-  #toast { position:fixed; top:40%; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.75); padding:10px 16px;
-    border-radius:12px; font-size:14px; pointer-events:none; max-width:calc(100% - 32px); text-align:center; }
-  #start { position:fixed; inset:0; z-index:10; display:flex; flex-direction:column; gap:16px; align-items:center;
-    justify-content:center; padding:16px; text-align:center; background:#000; }
-  #start p { max-width:360px; opacity:.8; margin:0; line-height:1.4; }
-  #start button { font-size:18px; padding:14px 28px; border-radius:999px; border:0; background:var(--accent); }
-</style>
 </head>
 <body>
-<div id="start">
-  <h1 style="margin:0">TrackED</h1>
-  <p>Fais un « L » avec le pouce et l'index de chaque main, face caméra :
-  un cadre magique apparaît entre tes mains. Tout ce qui passe dedans — ton visage, tes amis, le décor — est transformé.</p>
-  <button id="go">Activer la caméra</button>
-</div>
+<!-- soft blurred colour field behind everything -->
+<div class="aura" aria-hidden="true"></div>
 
-<canvas id="out"></canvas>
-<canvas id="debug-layer" hidden></canvas>
-<video id="cam" playsinline muted autoplay></video>
-<div id="status"></div>
-<div id="toast" hidden></div>
+<!-- ============ Intro ============ -->
+<section id="start">
+  <header class="brand glass">
+    <svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><g id="spark-rays"></g></svg>
+    <span>TrackED</span>
+  </header>
 
-<div id="top">
-  <button id="photo">📸 Photo</button>
-  <button id="rec">⏺ Vidéo</button>
-  <button id="flip" aria-label="Changer de caméra">↺</button>
-  <button id="debug">Points</button>
-</div>
+  <div class="hero">
+    <h1>Frame the world<br />with your hands.</h1>
+    <p class="lede">Make an <b>L</b> with the thumb and index of each hand. A live frame appears between
+      them, and everything inside it changes: your face, your friends, the room.</p>
 
-<div id="panel">
-  <div id="tabs" class="row"></div>
-  <div id="chips" class="row"></div>
-</div>
+    <figure class="wave-card">
+      <figcaption><span>Hand tracking</span><span class="tag">Real-time</span></figcaption>
+      <svg id="waves" viewBox="0 0 600 180" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div class="wave-legend"><span>Pinch</span><span>Frame</span></div>
+    </figure>
+
+    <div class="tiles">
+      <div class="tile t-green"><b>12</b><span>Effects</span><svg class="arrow" viewBox="0 0 12 12"><path d="M3 9l6-6M4 3h5v5"/></svg></div>
+      <div class="tile t-sun"><b>8</b><span>Face filters</span><svg class="arrow" viewBox="0 0 12 12"><path d="M3 9l6-6M4 3h5v5"/></svg></div>
+      <div class="tile t-peach"><b>7</b><span>Shapes</span><svg class="arrow" viewBox="0 0 12 12"><path d="M3 9l6-6M4 3h5v5"/></svg></div>
+    </div>
+
+    <button id="go" class="cta"><i class="dot"></i>Start camera</button>
+    <p class="fine">Everything runs on your device. No video ever leaves your browser.</p>
+  </div>
+</section>
+
+<!-- ============ Camera ============ -->
+<main id="app" hidden>
+  <div id="stage">
+    <canvas id="out"></canvas>
+    <canvas id="debug-layer" hidden></canvas>
+  </div>
+  <video id="cam" playsinline muted autoplay></video>
+
+  <header class="brand glass small">
+    <svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><use href="#spark-rays" /></svg>
+    <span>TrackED</span>
+  </header>
+
+  <nav class="tools">
+    <button id="photo" class="icon glass" aria-label="Take photo" title="Photo">
+      <svg viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+    </button>
+    <button id="rec" class="icon glass" aria-label="Record video" title="Record">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle class="fill" cx="12" cy="12" r="4"/></svg>
+    </button>
+    <button id="flip" class="icon glass" aria-label="Switch camera" title="Switch camera">
+      <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>
+    </button>
+    <button id="debug" class="icon glass" aria-label="Show tracking points" title="Tracking points">
+      <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="1.5"/><circle cx="18" cy="6" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="6" cy="18" r="1.5"/><circle cx="18" cy="18" r="1.5"/></svg>
+    </button>
+  </nav>
+
+  <div id="status" class="pill glass"><i class="dot"></i><span></span></div>
+  <div id="rec-pill" class="pill glass" hidden><i class="dot red"></i><span>00:00</span></div>
+  <div id="toast" class="pill glass" hidden></div>
+
+  <aside id="hud" class="glass" hidden>
+    <div><b id="hud-fps">0</b><span>Render fps</span></div>
+    <div><b id="hud-dps">0</b><span>Tracking fps</span></div>
+    <div><b id="hud-faces">0</b><span>Faces</span></div>
+    <div class="tag" id="hud-mode">worker</div>
+  </aside>
+
+  <section id="panel" class="glass">
+    <div id="tabs" class="row" role="tablist"></div>
+    <div id="chips" class="row"></div>
+  </section>
+</main>
 
 <script type="module" src="src/main.js"></script>
 </body>

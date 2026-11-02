@@ -208,7 +208,7 @@ vec2 remap(vec2 uv, vec2 fuv) {
     vec2 b = uTexel * 18.0;
     return (floor(uv / b) + 0.5) * b;
   }
-  if (uEffect == 9) {                                       // kaléidoscope (6 segments, slowly turning)
+  if (uEffect == 9) {                                       // kaleidoscope (6 segments, slowly turning)
     float k = uFrameAspect;
     vec2 p = vec2((fuv.x - 0.5) * k, fuv.y - 0.5);
     float r = length(p), a = atan(p.y, p.x) + uTime * 0.3;
@@ -217,14 +217,14 @@ vec2 remap(vec2 uv, vec2 fuv) {
     p = r * vec2(cos(a), sin(a));
     return bilinear(clamp(vec2(p.x / k, p.y) + 0.5, 0.0, 1.0));
   }
-  if (uEffect == 10) {                                      // loupe ×2
+  if (uEffect == 10) {                                      // magnifier ×2
     vec2 c = bilinear(vec2(0.5));
     return c + (uv - c) * 0.5;
   }
   return uv;
 }
 vec3 colorFx(vec3 c, vec2 uv, vec2 fuv) {
-  if (uEffect == 1) {                                       // néon: posterized in the chosen colour + glowing edges
+  if (uEffect == 1) {                                       // neon: posterized in the chosen colour + glowing edges
     float l = luma(c);
     float v = l > 0.6 ? 1.0 : l > 0.36 ? 0.75 : l > 0.2 ? 0.28 : 0.05;
     vec3 col = uColor * v;
@@ -232,9 +232,9 @@ vec3 colorFx(vec3 c, vec2 uv, vec2 fuv) {
     float e = smoothstep(0.25, 0.6, sobel(uv));
     return mix(col, mix(uColor, vec3(1.0), 0.7), e * 0.8);
   }
-  if (uEffect == 2) return uColor * smoothstep(0.0, 0.85, luma(c)) * 1.25;   // teinte
-  if (uEffect == 3) return 1.0 - c;                                          // négatif
-  if (uEffect == 4) return vec3(clamp((luma(c) - 0.5) * 1.6 + 0.5, 0.0, 1.0)); // N&B
+  if (uEffect == 2) return uColor * smoothstep(0.0, 0.85, luma(c)) * 1.25;   // tint
+  if (uEffect == 3) return 1.0 - c;                                          // invert
+  if (uEffect == 4) return vec3(clamp((luma(c) - 0.5) * 1.6 + 0.5, 0.0, 1.0)); // mono
   if (uEffect == 5) {                                                         // glitch
     float shift = 0.006 + 0.004 * sin(uTime * 7.0 + uv.y * 40.0);
     float band = step(0.92, fract(sin(floor(uv.y * 30.0) * 12.9898 + floor(uTime * 8.0)) * 43758.5453));
@@ -243,7 +243,7 @@ vec3 colorFx(vec3 c, vec2 uv, vec2 fuv) {
     float scan = 0.85 + 0.15 * sin(uv.y / uTexel.y * 1.5);
     return g * scan * vec3(0.9, 1.1, 1.2);
   }
-  if (uEffect == 6) return thermal(luma(c));                                  // thermique
+  if (uEffect == 6) return thermal(luma(c));                                  // thermal
   if (uEffect == 8) {                                                         // cartoon
     vec3 q = floor(c * 4.0 + 0.5) / 4.0;
     float e = smoothstep(0.3, 0.7, sobel(uv));
@@ -254,7 +254,7 @@ vec3 colorFx(vec3 c, vec2 uv, vec2 fuv) {
     vec3 img = texture(uOverlay, ouv).rgb;
     return mix(img, img * (0.6 + 0.6 * luma(c)), 0.35);
   }
-  return c;                                                                   // aucun / pixel / kaléido / loupe
+  return c;                                                                   // none / pixel / kaleido / loupe
 }
 
 // ---------- segmentation target ----------
@@ -345,7 +345,7 @@ export class Renderer {
       alpha: false, antialias: false, depth: false, stencil: false,
       preserveDrawingBuffer: false, powerPreference: "high-performance",
     });
-    if (!gl) throw new Error("WebGL2 non supporté par ce navigateur");
+    if (!gl) throw new Error("WebGL2 is not supported by this browser");
     this.gl = gl;
     this.canvas = canvas;
 

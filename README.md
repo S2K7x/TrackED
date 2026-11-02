@@ -1,51 +1,55 @@
-# TrackED – cadre aux doigts
+# TrackED
 
-Application web qui reproduit l'effet tendance « cadre avec les doigts » : fais un **L avec le pouce et l'index de chaque main**, un rectangle filtré apparaît entre tes mains et suit leurs mouvements (rotation, étirement, perspective).
+Frame the world with your fingers. Make an **L with the thumb and index of each hand** and a live frame appears between your hands. Everything inside it changes in real time: your face, your friends, the room. The frame follows your hands as they move, tilt and stretch.
 
-## Lancer en local
+Everything runs in the browser, on your device. No video leaves it.
+
+## Run locally
 ```bash
-npm start          # sert le dossier sur http://localhost:8000
-npm test           # tests unitaires (géométrie + filtre)
+npm start          # serves the folder at http://localhost:8000
+npm test           # unit tests (geometry, filter, faces, options)
 ```
-Sur téléphone il faut du **HTTPS** pour la caméra.
+On a phone the camera requires **HTTPS**.
 
-## Fonctionnalités
-Le panneau du bas a 5 onglets :
+## Features
+The bottom sheet has five tabs:
 
-| Onglet | Options |
+| Tab | Options |
 |---|---|
-| **Effet** | Aucun, Néon, Teinte, Thermique, Cartoon, Glitch, Pixel, Kaléido, Loupe ×2, Négatif, N&B, Image (+ ton image perso) |
-| **Visage** | 👀 Gros yeux, 👄 Grosse bouche, 👽 Alien, 🎈 Tête ballon, 🤏 Mini visage, 🌀 Tourbillon, 🔴 Yeux laser, 🔲 Anonyme (pixelisé). Appliqué à **tout le monde**, **moi** (le visage le plus proche) ou **les autres** (jusqu'à 4 visages), uniquement quand ils sont dans le cadre |
-| **Cible** | L'effet couleur ne touche que : Tout, Personnes, Fond, Peau, Cheveux ou Vêtements (segmentation de personnes) |
-| **Forme** | Rectangle, Arrondi, Ellipse, Cercle, Cœur, Étoile, Losange |
-| **Couleur** | 8 couleurs + sélecteur libre (utilisée par Néon, Teinte, la bordure et les yeux laser) ; bordure néon, arc-en-ciel animée, épaisse ou aucune |
+| **Effect** | None, Neon, Tint, Thermal, Cartoon, Glitch, Pixel, Kaleido, Loupe ×2, Invert, Mono, Image (plus your own image) |
+| **Face** | Big eyes, Big mouth, Alien, Balloon head, Tiny face, Swirl, Laser eyes, Anonymize. Applied to **everyone**, **me** (the closest face) or **others** (up to 4 faces), and only while they are inside the frame |
+| **Target** | Limits the colour effect to: Everything, People, Background, Skin, Hair or Clothes (person segmentation) |
+| **Shape** | Rectangle, Rounded, Ellipse, Circle, Heart, Star, Diamond |
+| **Color** | 9 presets plus a custom picker (drives Neon, Tint, the border and laser eyes); neon, animated rainbow, thick or no border |
 
-En haut : **📸 Photo** et **⏺ Vidéo** (enregistrement MP4 si le navigateur le permet, sinon WebM ; partage direct sur mobile), changement de caméra, et **Points** (debug : points détectés + FPS).
-On peut aussi glisser à gauche/droite sur l'image pour changer d'effet. Les réglages sont mémorisés.
+The top bar has **photo**, **video recording** (MP4 when the browser supports it, WebM otherwise, with the native share sheet on mobile), **camera switch** and **tracking points**. The last one shows the detected points and a HUD with render and tracking FPS.
+You can also swipe left or right on the video to cycle effects. Settings are remembered.
+
+## Design
+The UI is light and airy: a warm off-white canvas with soft colour fields, frosted-glass panels, gradient preview tiles, thin line art and a single lime accent. The font is [Urbanist](https://fonts.google.com/specimen/Urbanist). The camera feed sits in a rounded card. On the intro page, the line-art wave bundle is an animated SVG generated in `src/art.js`. Background colour fields are plain radial gradients rather than blurred layers, which keeps compositing cheap, and the glass blur is lighter over live video.
 
 ## Architecture
-| Fichier | Rôle |
+| File | Role |
 |---|---|
-| `src/main.js` | Boucle principale, état du cadre, UI |
-| `src/options.js` | Liste des options affichées dans l'UI |
-| `src/vision.js` | Pipeline MediaPipe : mains (toujours), visages et segmentation (chargés à la demande) |
-| `src/tracker.js` + `src/tracker-worker.js` | Exécution de la vision dans un **Web Worker** (repli sur le thread principal) |
-| `src/renderer.js` | Rendu **WebGL2** : formes, effets, déformations du visage et masques dans un seul fragment shader |
-| `src/faces.js` | Points clés du visage (yeux, bouche, nez, taille), sélection moi/les autres, catégories de segmentation |
-| `src/capture.js` | Photo et enregistrement vidéo du canvas |
-| `src/one-euro.js` | **Filtre One Euro** pour lisser les points sans latence |
-| `src/geometry.js` | Construction du quadrilatère entre les deux mains |
+| `index.html`, `src/styles.css` | Markup and styles |
+| `src/main.js` | Main loop, frame state, UI |
+| `src/options.js` | Options shown in the UI (labels, preview tiles, icons) |
+| `src/art.js` | Decorative SVG line art |
+| `src/vision.js` | MediaPipe pipeline: hands (always), faces and segmentation (loaded on demand) |
+| `src/tracker.js` + `src/tracker-worker.js` | Runs the vision pipeline in a **Web Worker** (falls back to the main thread) |
+| `src/renderer.js` | **WebGL2** renderer: shapes, effects, face warps and masks in a single fragment shader |
+| `src/faces.js` | Face anchors (eyes, mouth, nose, size), me/others selection, segmentation categories |
+| `src/capture.js` | Photo and video capture of the canvas |
+| `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
+| `src/geometry.js` | Builds the quad between the two hands |
 
-## Comment marchent les nouvelles features
-- **Formes** : chaque forme est une *fonction de distance signée* (SDF, formules d'Inigo Quilez) évaluée dans le repère (u, v) du cadre. `fwidth()` convertit cette distance en pixels écran, ce qui donne un bord net et anti-aliasé quelle que soit la forme. Cœur, étoile et cercle gardent leurs proportions, alors que rectangle, ellipse et losange s'étirent avec le cadre.
-- **Visages** : [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js) (478 points, iris compris) pour jusqu'à 4 visages. On n'envoie au shader que les yeux, la bouche, le nez et la taille du visage. Les déformations (loupe radiale, pincement, tourbillon) modifient les coordonnées de lecture de la texture vidéo, uniquement à l'intérieur du cadre.
-- **Cible** : [MediaPipe Image Segmenter](https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter) avec le modèle `selfie_multiclass_256x256` (fond, cheveux, peau du corps, peau du visage, vêtements, accessoires). Le masque de catégories est envoyé au GPU comme texture R8 ; un masque de bits choisit les catégories à modifier. Il marche sur toutes les personnes à l'écran.
-- **Coût maîtrisé** : les modèles visage et segmentation ne sont téléchargés qu'à la première utilisation, et ne tournent que quand un cadre est affiché. Si les deux sont actifs, ils s'exécutent une image sur deux, en alternance.
-
-## Optimisations
-- **Rendu 100 % GPU**, sans aucun `getImageData`.
-- **Détection hors du thread principal** : images réduites à 480 px, transférées sans copie (`ImageBitmap`), une seule image en traitement à la fois (les autres sont ignorées, la latence ne s'accumule pas).
-- **`requestVideoFrameCallback`** : chaque image caméra est traitée exactement une fois.
-- **Mode VIDEO de MediaPipe**, délégué GPU avec repli CPU.
-- **Filtre One Euro**, tolérance aux détections ratées, fondus, pause quand l'onglet est caché.
-- Dans un worker module, MediaPipe ne peut normalement charger qu'une seule tâche (`ModuleFactory not set`). Le hook `self.import` réutilise la factory WASM pour toutes les tâches.
+## How it works
+- **Rendering is fully on the GPU.** The camera frame is a texture. For each pixel, the shader inverts the bilinear mapping of the frame quad to get (u, v) inside the frame. That gives anti-aliased edges, a glowing border and a perspective-warped overlay image, without any `getImageData`.
+- **Shapes** are signed distance functions (Inigo Quilez's 2D SDFs) evaluated in the frame's (u, v) space. `fwidth()` converts the distance to screen pixels for a crisp edge on every shape.
+- **Faces** use [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/web_js), 478 points including the irises. Only the eyes, mouth, nose and face size are sent to the shader. The warps (radial magnify, pinch, swirl) remap the texture lookup inside the frame only.
+- **Targets** use [MediaPipe Image Segmenter](https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter) with `selfie_multiclass_256x256`: background, hair, body skin, face skin, clothes and accessories. The category mask is uploaded as an R8 texture, and a bitmask selects the categories to change.
+- **Tracking runs off the main thread.** Frames are downscaled to 480 px and transferred as `ImageBitmap` without copying. At most one frame is in flight; newer frames are dropped instead of queued, so latency never piles up.
+- **`requestVideoFrameCallback`** processes every camera frame exactly once.
+- **Cost control.** The face and segmentation models download on first use and only run while a frame is on screen. When both are active, they alternate frames.
+- **One Euro filter** gives strong smoothing when the hands are still (no jitter) and light smoothing when they move fast (no lag).
+- **Multiple MediaPipe tasks in a module worker.** MediaPipe normally loads only one task there (`ModuleFactory not set`). A `self.import` hook reuses the WASM factory for every task.
