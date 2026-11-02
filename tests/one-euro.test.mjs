@@ -32,3 +32,15 @@ test("non-increasing timestamps reset instead of dividing by zero", () => {
   f.filter(1, 1);
   assert.equal(f.filter(2, 1), 2);
 });
+
+test("predict extrapolates along the filtered velocity, with a clamped lead", async () => {
+  const { PointsFilter, extrapolate } = await import("../src/one-euro.js");
+  const f = new PointsFilter(1, { minCutoff: 1, beta: 10 });
+  for (let i = 0; i <= 30; i++) f.filter([{ x: i / 30, y: 0.5 }], i / 30); // moving right at 1 unit/s
+  const now = f.predict(0)[0].x, ahead = f.predict(0.05)[0].x;
+  assert.ok(ahead > now, "moves forward");
+  assert.ok(ahead - now < 0.06, "≈ velocity × lead");
+  assert.equal(extrapolate(0, 1, 5), 0.08);   // lead clamped
+  assert.equal(extrapolate(0, 1, -1), 0);
+  assert.equal(new PointsFilter(1).predict(0.1), null);
+});

@@ -15,6 +15,11 @@ self.onmessage = async ({ data }) => {
     return;
   }
 
+  if (data.type === "warm") {
+    vision.warm(data.list);
+    return;
+  }
+
   if (data.type === "analyze") {
     let mesh = null, error = null;
     try { mesh = await vision.analyze(data.bitmap); } catch (err) { error = String(err?.message || err); }

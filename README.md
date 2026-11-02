@@ -28,6 +28,7 @@ The bottom sheet has five tabs:
 Hands-free features (both hands are busy making the frame):
 - **Capture timer**: 3, 2, 1 countdown before a photo or a recording starts. Tap again or press Esc to cancel.
 - **Pinch to switch**: close the frame (thumbs and indexes together) and reopen it within 0.7 s to jump to the next effect.
+- **One-hand signs** (only read when a single hand is visible, so they never clash with the frame): hold 👍 to take a photo, ✌️ for the next effect, 🖐 to freeze or unfreeze. A ring fills while you hold the sign, which fires after 0.6 s and only once per sign. Classification is pure geometry on the 21 hand landmarks (finger joint angles and distances), so it needs no second model.
 - **Freeze**: the picture inside the frame freezes while the live scene keeps moving around it. Move the frozen window across the room.
 
 The top bar has **photo**, **video recording** (MP4 when the browser supports it, WebM otherwise, with the native share sheet on mobile), **camera switch** and **tracking points**. The last one shows the detected points and a HUD with render and tracking FPS.
@@ -63,6 +64,8 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `tools/gen-face-mesh.mjs` | Generator for the mesh data |
 | `src/three-layer.js` | three.js layer: head pose, camera, occluder, pose smoothing, user models |
 | `src/accessories.js` | Built-in 3D accessories |
+| `src/gestures.js` | One-hand sign classifier (👍 ✌️ 🖐) and hold debouncing |
+| `sw.js` | Service worker: model / library caching, offline |
 | `src/device.js` | Device profile: mobile/desktop, performance tier, detection size, model cadence |
 | `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
 | `src/geometry.js` | Builds the quad between the two hands |
@@ -80,6 +83,15 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 - **Your mask:** download the template (mesh wireframe, eyes, lips), paint on it in any editor, export a PNG with transparency, and load it.
 - **Face swap:** the photo goes through MediaPipe in IMAGE mode, and its own landmarks become the texture coordinates. Per-vertex alpha fades the outline and opens the eyes and mouth, so the live eyes blink and the mouth talks. A local colour transfer (live low-pass ÷ photo low-pass) matches skin tone and lighting.
 - **Smoothing:** meshes go through a One Euro filter, with one filter bank per face. On slow devices the last face is kept for about 3 model updates, so masks don't flicker.
+
+## Smart and smooth: tracking quality and performance
+- **Latency compensation.** The camera-to-result delay is measured continuously (moving average). On every rendered frame, the frame's corners are pushed forward along their One Euro filtered velocity by "latency + time since the last result", with a cap of 80 ms. The frame stays glued to the hands instead of trailing behind them. Filtering removes jitter and prediction removes lag, the usual pairing described in the [1€ filter](https://cristal.univ-lille.fr/~casiez/1euro) literature. The One Euro derivative is taken on the raw signal, as in the original paper.
+- **Edge-aware segmentation.** The low-resolution category mask is refined with a 3×3 joint bilateral filter guided by the camera colours, the approach [Google Meet uses](https://research.google/blog/background-features-in-google-meet-powered-by-web-ml/). Effect edges follow hair and shoulders instead of blocky mask pixels. Low-end phones skip the refinement.
+- **Dynamic resolution.** If rendering stays under 22 fps for 3 s, the internal resolution drops by 15% steps (down to 55%). It climbs back once rendering holds 28 fps.
+- **Power saving.** With no hand in view for 3 s, tracking runs every other frame. A hand coming back is picked up within about 70 ms.
+- **Warm-up.** On mid and high-tier devices, the face model loads in the background during idle time, so the first mask, face filter or 3D accessory appears instantly.
+- **Offline and instant reloads.** A service worker (`sw.js`) caches the MediaPipe WASM, the models, three.js and the fonts (cache-first, since the URLs are versioned). The app's own files are network-first so updates arrive immediately, with an offline fallback.
+- The tracking HUD (D) shows render and tracking fps, latency, render scale and the face/segmentation cadence.
 
 ## Display modes for masks and 3D
 | Mode | Behaviour |

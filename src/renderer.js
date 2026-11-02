@@ -139,6 +139,7 @@ uniform float uTime;
 uniform vec2  uCover;           // overlay "object-fit: cover" scale
 uniform vec3  uColor;           // user colour (tint, neon, border, laser)
 uniform int   uTargetBits;      // bitmask of mask categories; 0 = everything
+uniform bool  uRefine;          // edge-aware mask refinement (off on low-end devices)
 uniform int   uFaceFx;
 uniform int   uFaceCount;
 uniform vec2  uFacePts[MAX_FACES * 4]; // eyeL, eyeR, mouth, nose
@@ -285,17 +286,35 @@ vec3 colorFx(vec3 c, vec2 uv, vec2 fuv) {
 }
 
 // ---------- segmentation target ----------
+// Joint bilateral upsampling of the low-res category mask (as in Google Meet's
+// background pipeline): 3×3 mask samples weighted by spatial distance AND by
+// how similar the camera colour there is to this pixel's colour, so the mask
+// edge snaps to real edges (hair, shoulders) instead of blocky mask texels.
 float targetMask(vec2 uv) {
   if (uTargetBits == 0) return 1.0;
   vec2 ts = 1.0 / vec2(textureSize(uMask, 0));
   vec2 p = src(uv);
-  float m = 0.0;
-  for (int i = 0; i < 4; i++) {          // 4 taps → soft 1-texel edge on a hard category mask
-    vec2 o = (vec2(i & 1, i >> 1) - 0.5) * ts;
-    int cat = int(texture(uMask, p + o).r * 255.0 + 0.5);
-    m += float((uTargetBits >> cat) & 1);
+  if (!uRefine) {
+    float m = 0.0;
+    for (int i = 0; i < 4; i++) {
+      vec2 o = (vec2(i & 1, i >> 1) - 0.5) * ts;
+      m += float((uTargetBits >> int(texture(uMask, p + o).r * 255.0 + 0.5)) & 1);
+    }
+    return m * 0.25;
   }
-  return m * 0.25;
+  vec3 c0 = texture(uVideo, p).rgb;
+  float sum = 0.0, wsum = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 o = vec2(float(x), float(y)) * ts;
+      float on = float((uTargetBits >> int(texture(uMask, p + o).r * 255.0 + 0.5)) & 1);
+      vec3 c = texture(uVideo, p + o).rgb;
+      float w = exp(-dot(c - c0, c - c0) * 40.0) * exp(-float(x * x + y * y) * 0.5);
+      sum += on * w;
+      wsum += w;
+    }
+  }
+  return smoothstep(0.2, 0.8, sum / max(wsum, 1e-4));
 }
 
 vec3 borderColor(vec2 fuv) {
@@ -443,7 +462,7 @@ function makeTexture(gl, filter = gl.LINEAR) {
 
 const UNIFORMS = [
   "uVideo", "uOverlay", "uMask", "uFrozen", "uFreeze", "uQuad", "uAlpha", "uEffect", "uShape", "uBorder", "uMirror", "uTexel",
-  "uAspect", "uFrameAspect", "uTime", "uCover", "uColor", "uTargetBits", "uFaceFx", "uFaceCount", "uFacePts", "uFaceR",
+  "uAspect", "uFrameAspect", "uTime", "uCover", "uColor", "uTargetBits", "uRefine", "uFaceFx", "uFaceCount", "uFacePts", "uFaceR",
 ];
 
 export class Renderer {
@@ -477,6 +496,7 @@ export class Renderer {
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 
     this.quadData = new Float32Array(8);
+    this.scale = 1;   // internal render resolution (dynamic resolution on slow devices)
     this.facePts = new Float32Array(MAX_FACES * 8);
     this.faceR = new Float32Array(MAX_FACES);
     this.overlaySize = [1, 1];
@@ -599,7 +619,7 @@ export class Renderer {
     gl.uniform1i(u.uVideo, 0);
     gl.uniform1i(u.uMaskTex, 4);
     gl.uniform1i(u.uMirror, s.mirror ? 1 : 0);
-    gl.uniform2f(u.uTexel, 1 / this.canvas.width, 1 / this.canvas.height);
+    gl.uniform2f(u.uTexel, ...(this.videoTexel || [1 / this.canvas.width, 1 / this.canvas.height]));
     gl.uniform1i(u.uInFrame, s.inFrame ? 1 : 0);
     gl.uniform1f(u.uAlpha, s.alpha);
     gl.uniform1f(u.uShade, o.shade);
@@ -671,8 +691,9 @@ export class Renderer {
    */
   draw(video, s) {
     const gl = this.gl;
-    const w = video.videoWidth, h = video.videoHeight;
-    if (!w || !h) return;
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return;
+    const w = Math.round(vw * this.scale), h = Math.round(vh * this.scale);
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
@@ -690,8 +711,9 @@ export class Renderer {
     gl.uniform1i(u.uFreeze, this.frozen ? 1 : 0);
     gl.uniform1f(u.uAlpha, s.quad ? s.alpha : 0);
     gl.uniform1i(u.uMirror, s.mirror ? 1 : 0);
-    gl.uniform2f(u.uTexel, 1 / w, 1 / h);
-    gl.uniform1f(u.uAspect, w / h);
+    gl.uniform2f(u.uTexel, 1 / vw, 1 / vh);   // camera texel (independent of the render scale)
+    gl.uniform1f(u.uAspect, vw / vh);
+    this.videoTexel = [1 / vw, 1 / vh];
     gl.uniform1f(u.uTime, s.time);
     if (s.quad) {
       s.quad.forEach((p, i) => { this.quadData[i * 2] = p.x; this.quadData[i * 2 + 1] = p.y; });
@@ -706,6 +728,7 @@ export class Renderer {
       gl.uniform1i(u.uBorder, Math.max(0, BORDERS.indexOf(s.border)));
       gl.uniform3fv(u.uColor, s.color);
       gl.uniform1i(u.uTargetBits, s.targetBits || 0);
+      gl.uniform1i(u.uRefine, s.refineMask ? 1 : 0);
       this.#setFaces(s.faceFx, s.faces);
     }
     gl.drawArrays(gl.TRIANGLES, 0, 3);

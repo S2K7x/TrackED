@@ -183,6 +183,13 @@ video { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: no
   border: 3px solid rgba(255,255,255,.9); box-shadow: 0 2px 8px rgba(20,20,10,.15); }
 .swatch.on { box-shadow: 0 0 0 2px var(--ink), 0 2px 8px rgba(20,20,10,.15); }
 
+/* one-hand sign: icon + label + a ring that fills while the sign is held */
+#sign { top: calc(var(--stage-top, 0px) + var(--stage-h, 100vh) * .3); gap: 10px; padding: 8px 14px 8px 10px; }
+#sign b { font-size: 22px; line-height: 1; font-weight: 400; }
+#sign .ring { width: 20px; height: 20px; border-radius: 50%; flex: 0 0 auto;
+  background: conic-gradient(var(--ink) calc(var(--p, 0) * 360deg), rgba(20,20,19,.12) 0);
+  -webkit-mask: radial-gradient(circle, transparent 55%, #000 57%); mask: radial-gradient(circle, transparent 55%, #000 57%); }
+
 /* capture feedback */
 #countdown { position: fixed; z-index: 6; left: calc(var(--stage-left, 0px) + var(--stage-w, 100vw) / 2);
   top: calc(var(--stage-top, 0px) + var(--stage-h, 100vh) / 2); transform: translate(-50%, -50%);

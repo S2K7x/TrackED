@@ -102,6 +102,10 @@ export const OPTIONS = {
     { value: "on", label: "Pinch to switch effect" },
     { value: "off", label: "Off" },
   ],
+  signs: [
+    { value: "on", label: "👍 photo · ✌️ next · 🖐 freeze" },
+    { value: "off", label: "Off" },
+  ],
   color: [
     { value: "#ff2d55", label: "Red" },
     { value: "#d4ff3a", label: "Lime" },
@@ -123,7 +127,7 @@ export const TABS = [
   { id: "target", label: "Target", groups: ["target"] },
   { id: "shape", label: "Shape", groups: ["shape"] },
   { id: "color", label: "Color", groups: ["color", "border"] },
-  { id: "more", label: "More", groups: ["timer", "gesture"] },
+  { id: "more", label: "More", groups: ["timer", "gesture", "signs"] },
 ];
 
 export const DEFAULTS = {
@@ -141,6 +145,7 @@ export const DEFAULTS = {
   color: "#ff2d55",
   timer: "3",
   gesture: "on",
+  signs: "on",
 };
 
 /** "#ff2d55" → [1, 0.176, 0.333] */

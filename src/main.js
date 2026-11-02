@@ -8,6 +8,7 @@ import { OPTIONS, TABS, DEFAULTS, hexToRgb } from "./options.js";
 import { Capture } from "./capture.js";
 import { drawSpark, drawWaves } from "./art.js";
 import { deviceProfile } from "./device.js";
+import { classifySign, SignHold } from "./gestures.js";
 
 const $ = (s) => document.querySelector(s);
 const video = $("#cam");
@@ -26,6 +27,7 @@ const GROUP_TITLES = {
   effect: "Effect", face: "Face filter", who: "Apply to", target: "Apply effect to",
   shape: "Frame shape", color: "Color", border: "Border", mask: "Face mask", maskArea: "Show masks & 3D",
   accessory: "3D accessory", anchor: "Your model sits", size: "Size",
+  timer: "Capture timer", gesture: "Pinch gesture", signs: "One-hand signs",
 };
 
 // ---------------- State ----------------
@@ -42,6 +44,9 @@ const state = {
   collapsed: false,
   frameNo: 0,
   reveal: [],         // per face 0..1: mask / 3D appear while the frame is on that face
+  latency: 60,        // ms between camera capture and tracking result (EMA)
+  quadAt: 0,          // performance.now() of the last two-hand detection
+  handsSeenAt: 0,     // last time any hand was visible (power saving)
 };
 
 const FADE_IN = 8;        // alpha units per second
@@ -54,7 +59,7 @@ document.documentElement.classList.toggle("is-mobile", device.mobile);
 let extrasEvery = device.extrasEvery; // adapted at runtime from the measured tracking rate
 
 const quadFilter = new PointsFilter(4, { minCutoff: 1.5, beta: 8, dCutoff: 1 });
-const stats = { renderFrames: 0, detectFrames: 0, fps: 0, dps: 0, since: performance.now() };
+const stats = { renderFrames: 0, detectFrames: 0, fps: 0, dps: 0, slow: 0, fast: 0, since: performance.now() };
 
 let renderer, tracker, capture;
 
@@ -508,6 +513,8 @@ async function start() {
   }
   showStatus(MSG.showBoth);
   scheduleFrame();
+  // warm up the face model while idle, so the first mask / face filter / 3D accessory is instant
+  if (device.tier !== "low") (window.requestIdleCallback || setTimeout)(() => tracker.warm(["face"]), { timeout: 4000 });
 }
 
 async function startCamera() {
@@ -560,7 +567,10 @@ function onFrame() {
     lastVideoTime = video.currentTime;
   }
   const t = performance.now();
-  tracker.submit(video, t, extrasWanted());
+  // power saving: with no hand in sight for 3 s, track every other frame (a hand
+  // entering the picture is still picked up within ~70 ms)
+  const idle = t - state.handsSeenAt > 3000 && !(settings.maskArea === "always" && (settings.mask !== "none" || settings.accessory !== "none"));
+  if (!idle || (state.idleTick = !state.idleTick)) tracker.submit(video, t, extrasWanted());
   update(t / 1000);
   const fs = frameState(t / 1000);
   renderer.draw(video, fs);
@@ -604,13 +614,24 @@ function extrasWanted() {
   return { face, mesh, pose, seg };
 }
 
+/**
+ * The frame shown on screen: the filtered corners pushed forward along their
+ * filtered velocity by the tracking latency + the time since that result,
+ * so the frame stays glued to the hands instead of trailing behind them.
+ */
+function displayQuad(nowMs) {
+  if (!state.quad || state.missStreak > 0) return state.quad;
+  const lead = (state.latency + (nowMs - state.quadAt)) / 1000;
+  return quadFilter.predict(lead) || state.quad;
+}
+
 function frameState(time) {
   // keep the last faces for ~3 face-model updates, so slow devices don't make masks flicker
   const ttl = Math.max(FACE_TTL, (3 * extrasEvery) / Math.max(1, stats.dps));
   const faces = time - state.facesAt < ttl ? state.faces : [];
   const on = selectFaces(faces, settings.who);
   return {
-    quad: state.quad,
+    quad: displayQuad(time * 1000),
     alpha: state.alpha,
     effect: settings.effect,
     shape: settings.shape,
@@ -619,6 +640,7 @@ function frameState(time) {
     mirror: state.facing === "user",
     time,
     targetBits: TARGETS[settings.target] || 0,
+    refineMask: device.tier !== "low",
     faceFx: settings.face,
     faces: faces.map((f, i) => ({ ...f, on: on[i], reveal: state.reveal[i] ?? 0 })),
   };
@@ -626,6 +648,8 @@ function frameState(time) {
 
 function onVision(result, timestampMs) {
   stats.detectFrames++;
+  const now = performance.now();
+  state.latency += (now - timestampMs - state.latency) * 0.1;
   const mirror = state.facing === "user";
   state.hands = mirror ? result.hands.map(mirrorLandmarks) : result.hands;
   if (result.faces) {
@@ -640,6 +664,7 @@ function onVision(result, timestampMs) {
   if (state.hands.length === 2) {
     const q = quadFromHands(state.hands[0], state.hands[1]);
     state.quad = quadFilter.filter(q, timestampMs / 1000);
+    state.quadAt = now;
     const collapsed = quadArea(q, aspect) < 0.0004; // fingers pinched together → close the frame
     detectPinch(collapsed);
     state.collapsed = collapsed;
@@ -648,7 +673,39 @@ function onVision(result, timestampMs) {
     state.missStreak++;
   }
   const n = state.hands.length;
+  if (n) state.handsSeenAt = now;
   showStatus(n === 2 ? "" : n === 1 ? MSG.showSecond : MSG.showBoth);
+  readSign(n === 1 ? state.hands[0] : null, now / 1000);
+}
+
+// ---------------- One-hand signs (hands-free shortcuts) ----------------
+// 👍 hold → photo (with the timer) · ✌️ → next effect · 🖐 → freeze / unfreeze
+const SIGNS = {
+  thumbs_up: { icon: "👍", label: "Photo", run: () => withTimer(takePhoto) },
+  victory: { icon: "✌️", label: "Next effect", run: () => nextEffect() },
+  open_palm: { icon: "🖐", label: "Freeze", run: () => toggleFreeze() },
+};
+const signHold = new SignHold(0.6);
+function readSign(hand, t) {
+  const pill = $("#sign");
+  if (settings.signs !== "on" || !hand) { signHold.reset(); pill.hidden = true; return; }
+  const aspect = video.videoWidth / video.videoHeight || 1;
+  const r = signHold.update(classifySign(hand, aspect), t);
+  if (!r.sign) { pill.hidden = true; return; }
+  const sgn = SIGNS[r.sign];
+  pill.hidden = false;
+  pill.querySelector("b").textContent = sgn.icon;
+  pill.querySelector("span").textContent = sgn.label;
+  pill.style.setProperty("--p", r.progress.toFixed(3));
+  if (r.fire) { sgn.run(); buzz(18); }
+}
+
+function nextEffect() {
+  const list = OPTIONS.effect.filter((o) => o.value !== "none");
+  const i = list.findIndex((o) => o.value === settings.effect);
+  const next = list[(i + 1) % list.length];
+  set("effect", next.value);
+  flash(next.label);
 }
 
 const smoothstep = (x) => x * x * (3 - 2 * x);
@@ -659,11 +716,7 @@ function detectPinch(collapsed) {
   const now = performance.now();
   if (collapsed && !state.collapsed) pinchedAt = now;
   if (!collapsed && state.collapsed && settings.gesture === "on" && now - pinchedAt < 700) {
-    const list = OPTIONS.effect.filter((o) => o.value !== "none");
-    const i = list.findIndex((o) => o.value === settings.effect);
-    const next = list[(i + 1) % list.length];
-    set("effect", next.value);
-    flash(next.label);
+    nextEffect();
     buzz(15);
   }
 }
@@ -713,7 +766,7 @@ function drawDebug() {
   $("#hud-fps").textContent = stats.fps;
   $("#hud-dps").textContent = stats.dps;
   $("#hud-faces").textContent = state.faces.length;
-  $("#hud-mode").textContent = `${state.trackerMode === "worker" ? "Web Worker" : "Main thread"} · ${device.mobile ? "mobile" : "desktop"} ${device.tier} · extras 1/${extrasEvery}`;
+  $("#hud-mode").textContent = `${state.trackerMode === "worker" ? "Web Worker" : "Main thread"} · ${device.mobile ? "mobile" : "desktop"} ${device.tier} · extras 1/${extrasEvery} · ${Math.round(state.latency)} ms · ${Math.round(renderer.scale * 100)}% res`;
 }
 
 function countFps(t) {
@@ -723,6 +776,11 @@ function countFps(t) {
     stats.fps = Math.round(stats.renderFrames * k);
     stats.dps = Math.round(stats.detectFrames * k);
     stats.renderFrames = stats.detectFrames = 0;
+    // rendering can't keep up → lower the internal resolution a step (and back up when there's headroom)
+    if (stats.fps < 22 && ++stats.slow >= 3 && renderer.scale > 0.55) { renderer.scale = +(renderer.scale - 0.15).toFixed(2); stats.slow = 0; }
+    else if (stats.fps >= 28 && ++stats.fast >= 5 && renderer.scale < 1) { renderer.scale = Math.min(1, +(renderer.scale + 0.15).toFixed(2)); stats.fast = 0; }
+    if (stats.fps >= 22) stats.slow = 0;
+    if (stats.fps < 28) stats.fast = 0;
     // tracking can't keep up → run the heavy face/segmentation models less often (and back again)
     if (state.quad && stats.dps < 12 && extrasEvery < 4) extrasEvery++;
     else if (stats.dps > 24 && extrasEvery > device.extrasEvery) extrasEvery--;
@@ -736,6 +794,11 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) video.pause();
   else { video.play().catch(() => {}); keepAwake(); }
 });
+
+// Cache models / WASM / libraries for instant second launches and offline use.
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch((err) => console.warn("service worker:", err)));
+}
 
 // test hook (used by automated browser tests only)
 window.__tracked = { state, settings, set, onVision: (...a) => onVision(...a), get renderer() { return renderer; }, get three() { return three; } };

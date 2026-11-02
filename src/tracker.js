@@ -56,6 +56,12 @@ export class HandTracker {
     await this.vision.init("GPU");
   }
 
+  /** Loads models in the background before they're needed. */
+  warm(list) {
+    if (this.mode === "worker") this.worker.postMessage({ type: "warm", list });
+    else this.vision?.warm(list);
+  }
+
   /**
    * Detects the face in a still image (for face swap).
    * @param {ImageBitmap} bitmap  consumed (transferred / closed)

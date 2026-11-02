@@ -74,6 +74,12 @@ export class VisionPipeline {
     }
   }
 
+  /** Pre-loads models before they're needed (e.g. ["face"]). */
+  warm(list = []) {
+    if (list.includes("face")) this.#ensureFace();
+    if (list.includes("seg")) this.#ensureSeg();
+  }
+
   #ensureFace() {
     this.face ??= this.#create(FaceLandmarker, {
       baseOptions: { modelAssetPath: MODELS.face },
