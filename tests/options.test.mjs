@@ -17,6 +17,17 @@ test("defaults are valid options and every tab group exists", () => {
   for (const t of TABS) for (const g of t.groups) assert.ok(OPTIONS[g] || PANEL_GROUPS.includes(g), g);
 });
 
+test("ready-made 3D models exist and aren't built-in primitive accessories", async () => {
+  const { existsSync } = await import("node:fs");
+  const { ACCESSORIES } = await import("../src/accessories.js");
+  const models = OPTIONS.accessory.filter((o) => o.glb);
+  assert.ok(models.length > 0);
+  for (const o of models) {
+    assert.ok(existsSync(new URL(`../${o.glb}`, import.meta.url)), o.glb);
+    assert.ok(!ACCESSORIES.includes(o.value), o.value);
+  }
+});
+
 test("hexToRgb", () => {
   assert.deepEqual(hexToRgb("#ff0080"), [1, 0, 128 / 255]);
 });

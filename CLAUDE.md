@@ -14,7 +14,7 @@ Owner: S2K7x (French-speaking; answer in French, keep **all code, UI text, comme
 ## Commands
 ```bash
 npm start    # python3 -m http.server 8000 → http://localhost:8000
-npm test     # node --test tests/*.test.mjs (50 tests, Node 20+)
+npm test     # node --test tests/*.test.mjs (51 tests, Node 20+)
 node tools/tune-filter.mjs                                   # One Euro tuning experiment
 /Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup --python tools/blender-reference-head.py -- <canonical_face_model.obj> assets/reference
 /Applications/Blender.app/Contents/MacOS/Blender --background assets/reference/tracked-reference-head.blend --python tools/blender-helmet.py -- assets/models

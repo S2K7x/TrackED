@@ -2,7 +2,7 @@
 
 ## Next (agreed with the owner)
 1. ~~3D model fit panel~~ (done) and ~~Blender reference head~~ (done, `assets/reference/`).
-2. **Blender session**: build more **original** masks and helmets and export `.glb` files for the 3D tab. Never copyrighted characters. First one done: **Aero** helmet (`assets/models/`, script `tools/blender-helmet.py`). Option: offer ready-made models as built-in 3D tab tiles (fetch the `.glb`, anchor "As modelled").
+2. **Blender session**: build more **original** masks and helmets and export `.glb` files for the 3D tab. Never copyrighted characters. First one done: **Aero** helmet (`assets/models/`, script `tools/blender-helmet.py`). It is a built-in tile in the 3D tab (`glb` option in `options.js`, fetched once, anchor "As modelled").
 3. Optional **original hero mask** built into the app (2D, painted in UV space like Skull/Gold, colour-aware).
 
 ## Ideas backlog

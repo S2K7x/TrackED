@@ -50,6 +50,7 @@ export class ThreeLayer {
       this.heads.push(head);
     }
     this.template = null; // accessory shown on every head
+    this.builtins = new Map(); // url → Promise<THREE.Object3D>, ready-made .glb accessories
     this.target = new THREE.WebGLRenderTarget(16, 16, { samples, depthBuffer: true });
     this.target.texture.colorSpace = THREE.SRGBColorSpace;
     this.poseSmooth = Array.from({ length: MAX_FACES }, () => new PoseSmoother());
@@ -61,18 +62,30 @@ export class ThreeLayer {
   }
 
   /**
+   * Ready-made .glb accessory, modelled around the reference head (anchor "As modelled").
+   * Downloaded once per layer; returns false if `isCurrent()` turned false meanwhile (user picked something else).
+   */
+  async setBuiltinModel(url, isCurrent = () => true) {
+    if (!this.builtins.has(url)) {
+      const p = fetch(url)
+        .then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.arrayBuffer(); })
+        .then((buf) => parseGlb(buf));
+      p.then((scene) => { p.resolved = scene; }, () => this.builtins.delete(url)); // failed: allow a retry
+      this.builtins.set(url, p);
+    }
+    const scene = await this.builtins.get(url);
+    if (!isCurrent()) return false;
+    this.#setTemplate(fitToHead(THREE, scene, "ref", 1, null));
+    return true;
+  }
+
+  /**
    * Loads a user .glb / .gltf and fits it to the head.
    * @param {ArrayBuffer} data
    * @param {"top"|"eyes"|"head"|"ref"} anchor  hat, glasses/face, helmet, or as modelled on the Blender reference head
    */
   async loadModel(data, anchor = "top", scale = 1, fit = null) {
-    const loader = new GLTFLoader();
-    const draco = new DRACOLoader();
-    draco.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.7/");
-    loader.setDRACOLoader(draco);
-    const gltf = await loader.parseAsync(data, "");
-    draco.dispose();
-    this.userModel = stripReference(gltf.scene);
+    this.userModel = stripReference(await parseGlb(data));
     this.fitUserModel(anchor, scale, fit);
   }
 
@@ -96,7 +109,7 @@ export class ThreeLayer {
     }
     // free GPU memory of the previous accessory (clones share geometry / materials, so once is enough);
     // a user model's originals stay alive in this.userModel and are reused by fitUserModel
-    if (this.template && this.template !== obj) disposeTree(this.template, this.userModel);
+    if (this.template && this.template !== obj) disposeTree(this.template, this.userModel, ...this.#loadedBuiltins());
     this.template = obj;
     if (!obj) return;
     this.heads.forEach((head, i) => {
@@ -105,6 +118,9 @@ export class ThreeLayer {
       head.userData.acc = acc;
     });
   }
+
+  /** Already-parsed built-in scenes (their GPU data is reused, never disposed). */
+  #loadedBuiltins() { return [...this.builtins.values()].map((p) => p.resolved).filter(Boolean); }
 
   get active() { return !!this.template; }
 
@@ -154,9 +170,21 @@ export class ThreeLayer {
   }
 }
 
-function disposeTree(root, keep) {
+async function parseGlb(data) {
+  const loader = new GLTFLoader();
+  const draco = new DRACOLoader();
+  draco.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.7/");
+  loader.setDRACOLoader(draco);
+  try {
+    return (await loader.parseAsync(data, "")).scene;
+  } finally {
+    draco.dispose();
+  }
+}
+
+function disposeTree(root, ...keep) {
   const kept = new Set();
-  keep?.traverse((o) => { if (o.geometry) kept.add(o.geometry); for (const m of [].concat(o.material || [])) kept.add(m); });
+  for (const k of keep) k?.traverse((o) => { if (o.geometry) kept.add(o.geometry); for (const m of [].concat(o.material || [])) kept.add(m); });
   root.traverse((o) => {
     if (o.geometry && !kept.has(o.geometry)) o.geometry.dispose();
     for (const m of [].concat(o.material || [])) {

@@ -280,9 +280,20 @@ async function applyAccessory() {
   if (a === "none") { three?.setAccessory(null); return; }
   const t = await ensureThree();
   if (!t) return;
+  const glb = OPTIONS.accessory.find((o) => o.value === a)?.glb;
   if (a === "model") {
     if (t.userModel) t.fitUserModel(settings.anchor, Number(settings.size), modelFit);
     else t.setAccessory(null);
+  } else if (glb) {
+    const slow = setTimeout(() => flash("Loading the model…"), 400);
+    try {
+      await t.setBuiltinModel(glb, () => settings.accessory === a && three === t);
+    } catch (err) {
+      console.error(err);
+      if (settings.accessory === a) { flash("Couldn't load that model. Check your connection."); t.setAccessory(null); }
+    } finally {
+      clearTimeout(slow);
+    }
   } else {
     t.setAccessory(a, settings.color);
   }

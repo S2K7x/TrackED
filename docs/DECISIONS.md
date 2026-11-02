@@ -15,6 +15,7 @@
 | Fits stored per model, keyed by size + FNV-1a of the first and last 128 kB | Same file → same fit after reload, without hashing a 60 MB file; at most 20 models kept |
 | Blender reference head in **metres, Z up, facing −Y**; "As modelled" anchor scales ×100 and skips the auto-fit | Blender's default units and glTF exporter (+Y up) give back MediaPipe's canonical space exactly (checked: exported bounds = canonical ÷ 100) |
 | Blender models built by **scripts run in background Blender** (`tools/blender-*.py`) | Reproducible and reviewable; works even when the live Blender MCP connection (port 9876) isn't running |
+| Ready-made models are `accessory` options with a `glb` path, fetched on first use and kept parsed per 3D layer | No download until picked; switching back is instant; their GPU data is never disposed while cached; a quick switch to another accessory during the download wins |
 | One-hand signs from landmark geometry instead of MediaPipe Gesture Recognizer | Avoids a second model; signs are only read with one hand visible so they never clash with the frame |
 | `main` auto-updated by GitHub Actions from `claude/**` branches after tests pass | Owner wanted `main` to always be up to date automatically |
 

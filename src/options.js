@@ -52,6 +52,9 @@ export const OPTIONS = {
     { value: "partyhat", label: "Party hat", tile: "repeating-linear-gradient(60deg,#fff 0 8px,var(--pick) 8px 16px)" },
     { value: "mohawk", label: "Mohawk", tile: "repeating-linear-gradient(90deg,#e9e9e4 0 10px,var(--pick) 10px 14px)" },
     { value: "catears", label: "Cat ears", tile: "conic-gradient(from 150deg at 30% 80%,var(--pick) 0 17%,transparent 0),conic-gradient(from 150deg at 72% 80%,var(--pick) 0 17%,transparent 0),#f3e9ea" },
+    // ready-made .glb models (original designs, built in Blender around the reference head: assets/models/)
+    { value: "aero", label: "Aero helmet", glb: "assets/models/aero-helmet.glb",
+      tile: "linear-gradient(180deg,transparent 0 44%,#1b1d22 44% 50%,#e09a2a 50% 80%,transparent 80%),radial-gradient(ellipse 46% 52% at 50% 56%,#f7f8fa 97%,transparent),linear-gradient(#232a33,#11151a)" },
     { value: "model", label: "Your 3D model", upload: "model" },
   ],
   anchor: [
