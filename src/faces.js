@@ -40,7 +40,12 @@ export function summarizeFace(lm, aspect = 1) {
 export function mirrorFace(f) {
   const m = (p) => ({ x: 1 - p.x, y: p.y });
   // mirroring swaps which eye is on the left
-  return { eyeL: m(f.eyeR), eyeR: m(f.eyeL), mouth: m(f.mouth), nose: m(f.nose), r: f.r };
+  const out = { eyeL: m(f.eyeR), eyeR: m(f.eyeL), mouth: m(f.mouth), nose: m(f.nose), r: f.r };
+  if (f.mesh) {
+    out.mesh = new Float32Array(f.mesh);
+    for (let i = 0; i < out.mesh.length; i += 2) out.mesh[i] = 1 - out.mesh[i];
+  }
+  return out;
 }
 
 /**

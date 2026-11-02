@@ -27,6 +27,21 @@ export const OPTIONS = {
     { value: "laser", label: "Laser eyes" },
     { value: "anon", label: "Anonymize" },
   ],
+  mask: [
+    { value: "none", label: "None", tile: "linear-gradient(135deg,#f4f4f1,#d9d9d4)" },
+    { value: "wire", label: "Wireframe", tile: "repeating-linear-gradient(60deg,#0f1512 0 7px,var(--pick) 7px 8px),#0f1512" },
+    { value: "visor", label: "Visor", tile: "linear-gradient(180deg,#e9e9e4 0 34%,#101418 34% 66%,#e9e9e4 66%)" },
+    { value: "skull", label: "Skull", tile: "radial-gradient(circle at 35% 45%,#15120f 0 12%,transparent 13%),radial-gradient(circle at 65% 45%,#15120f 0 12%,transparent 13%),radial-gradient(circle,#f4f1e8,#a8a090)" },
+    { value: "gold", label: "Gold", tile: "linear-gradient(135deg,#fff1b8,#e2b33c 35%,#a8741a 60%,#f0cc62 85%)" },
+    { value: "feline", label: "Feline", tile: "repeating-linear-gradient(100deg,#d8641c 0 9px,#1d130c 9px 12px)" },
+    { value: "warpaint", label: "War paint", tile: "linear-gradient(180deg,#e9d8c8 0 40%,var(--pick) 40% 50%,#e9d8c8 50% 58%,var(--pick) 58% 68%,#e9d8c8 68%)" },
+    { value: "custom", label: "Your mask", upload: "custom" },
+    { value: "swap", label: "Face swap", upload: "swap" },
+  ],
+  maskArea: [
+    { value: "frame", label: "Inside the frame" },
+    { value: "always", label: "Always on" },
+  ],
   who: [
     { value: "all", label: "Everyone" },
     { value: "me", label: "Me" },
@@ -80,6 +95,7 @@ export const OPTIONS = {
 export const TABS = [
   { id: "effect", label: "Effect", groups: ["effect"] },
   { id: "face", label: "Face", groups: ["face", "who"] },
+  { id: "mask", label: "Mask", groups: ["mask", "maskArea"] },
   { id: "target", label: "Target", groups: ["target"] },
   { id: "shape", label: "Shape", groups: ["shape"] },
   { id: "color", label: "Color", groups: ["color", "border"] },
@@ -89,6 +105,8 @@ export const TABS = [
 export const DEFAULTS = {
   effect: "neon",
   face: "none",
+  mask: "none",
+  maskArea: "frame",
   who: "all",
   target: "all",
   shape: "rect",

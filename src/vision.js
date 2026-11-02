@@ -41,6 +41,7 @@ export class VisionPipeline {
     this.seg = null;
     this.faceTask = null;
     this.segTask = null;
+    this.stillFace = null; // IMAGE-mode face landmarker for uploaded photos
   }
 
   async init(delegate = "GPU") {
@@ -95,7 +96,7 @@ export class VisionPipeline {
   /**
    * @param {TexImageSource} image
    * @param {number} ts  strictly increasing timestamp (ms)
-   * @param {{face?: boolean, seg?: boolean}} want
+   * @param {{face?: boolean, mesh?: boolean, seg?: boolean}} want  mesh = also return the 468-point mesh
    * @returns {{hands: object[][], faces?: object[], mask?: {data: Uint8Array, width: number, height: number}}}
    */
   process(image, ts, want = {}) {
@@ -108,7 +109,11 @@ export class VisionPipeline {
       this.#ensureFace();
       if (this.faceTask) {
         const fr = this.faceTask.detectForVideo(image, ts);
-        out.faces = (fr.faceLandmarks || []).map((lm) => summarizeFace(lm, aspect));
+        out.faces = (fr.faceLandmarks || []).map((lm) => {
+          const f = summarizeFace(lm, aspect);
+          if (want.mesh) f.mesh = meshXY(lm);
+          return f;
+        });
       }
     }
     if (want.seg) {
@@ -122,4 +127,26 @@ export class VisionPipeline {
     }
     return out;
   }
+
+  /**
+   * Finds the main face in a still image (face-swap source).
+   * @returns {Promise<Float32Array|null>} 468 (x, y) pairs in [0, 1], or null when no face is found
+   */
+  async analyze(image) {
+    this.stillFace ??= await this.#create(FaceLandmarker, {
+      baseOptions: { modelAssetPath: MODELS.face },
+      runningMode: "IMAGE",
+      numFaces: 1,
+      minFaceDetectionConfidence: 0.3,
+    });
+    const r = this.stillFace.detect(image);
+    return r.faceLandmarks?.[0] ? meshXY(r.faceLandmarks[0]) : null;
+  }
+}
+
+/** First 468 landmarks (the mesh; irises excluded) as a flat x, y array. */
+function meshXY(lm) {
+  const a = new Float32Array(468 * 2);
+  for (let i = 0; i < 468; i++) { a[i * 2] = lm[i].x; a[i * 2 + 1] = lm[i].y; }
+  return a;
 }

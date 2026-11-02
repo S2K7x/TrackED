@@ -1,6 +1,7 @@
 import { Renderer } from "./renderer.js";
 import { HandTracker } from "./tracker.js";
-import { PointsFilter } from "./one-euro.js";
+import { PointsFilter, OneEuro } from "./one-euro.js";
+import { paintMask, templateBlob } from "./masks.js";
 import { quadFromHands, quadArea, mirrorLandmarks } from "./geometry.js";
 import { mirrorFace, selectFaces, TARGETS } from "./faces.js";
 import { OPTIONS, TABS, DEFAULTS, hexToRgb } from "./options.js";
@@ -23,7 +24,7 @@ const MSG = {
 
 const GROUP_TITLES = {
   effect: "Effect", face: "Face filter", who: "Apply to", target: "Apply effect to",
-  shape: "Frame shape", color: "Color", border: "Border",
+  shape: "Frame shape", color: "Color", border: "Border", mask: "Face mask", maskArea: "Show mask",
 };
 
 // ---------------- State ----------------
@@ -44,7 +45,7 @@ const state = {
 const FADE_IN = 8;        // alpha units per second
 const FADE_OUT = 5;
 const MAX_MISSES = 3;     // keep the frame through a few missed detections (motion blur, occlusion)
-const FACE_TTL = 0.6;     // seconds before stale face data is dropped
+const FACE_TTL = 0.6;     // seconds before stale face data is dropped (stretched when face tracking is slow)
 
 const device = deviceProfile();
 document.documentElement.classList.toggle("is-mobile", device.mobile);
@@ -126,6 +127,27 @@ function renderGroup(group) {
     nodes.push(up);
     return nodes;
   }
+  if (group === "mask") {
+    const nodes = OPTIONS.mask.map((o) => {
+      if (o.upload) {
+        const icon = o.upload === "swap"
+          ? '<path d="M8 7a4 4 0 1 1 8 0v2a4 4 0 1 1-8 0zM4.5 20c1.2-3.2 4-5 7.5-5s6.3 1.8 7.5 5"/>'
+          : '<path d="M12 16V5M7.5 9.5L12 5l4.5 4.5M5 19h14"/>';
+        const b = el("label", { className: "fx upload" + (on(o.value) ? " on" : "") },
+          `<i><svg viewBox="0 0 24 24">${icon}</svg></i>${o.label}<input type="file" accept="image/*">`);
+        b.querySelector("input").addEventListener("change", (e) => onMaskImage(e, o.upload));
+        return b;
+      }
+      const b = el("button", { className: "fx" + (on(o.value) ? " on" : "") }, `<i></i>${o.label}`);
+      b.querySelector("i").style.background = o.tile;
+      b.addEventListener("click", () => set("mask", o.value));
+      return b;
+    });
+    const tpl = el("button", { className: "chip" }, "Download mask template");
+    tpl.addEventListener("click", downloadTemplate);
+    nodes.push(tpl);
+    return nodes;
+  }
   if (group === "shape") {
     return OPTIONS.shape.map((o) => {
       const b = el("button", { className: "shape" + (on(o.value) ? " on" : "") }, `<svg viewBox="0 0 24 24">${o.icon}</svg>${o.label}`);
@@ -157,7 +179,80 @@ function set(key, value, rerender = true) {
   settings[key] = value;
   saveSettings();
   if (key === "color") document.documentElement.style.setProperty("--pick", value);
+  if (key === "mask" || (key === "color" && COLORED_MASKS.has(settings.mask))) applyMask();
   if (rerender) renderChips();
+}
+
+// ---------------- Face masks ----------------
+// Built-in masks are painted in the face's canonical UV space; "Your mask" is an
+// image painted on the downloadable template; "Face swap" maps a photo's own face
+// mesh onto yours. How much the live lighting shades each mask:
+const MASK_SHADE = { wire: 0, visor: 0.3, skull: 0.7, gold: 0.95, feline: 0.7, warpaint: 0.6, custom: 0.55 };
+const COLORED_MASKS = new Set(["wire", "visor", "warpaint"]);
+const userMasks = { custom: null, swap: null }; // { image, swapUV? }
+const meshFilters = [];                        // One Euro filters per face slot (468 points each)
+
+function applyMask() {
+  if (!renderer) return;
+  const m = settings.mask;
+  if (m === "none") return renderer.setFaceMask(null);
+  if (m === "custom" || m === "swap") {
+    const u = userMasks[m];
+    if (!u) { renderer.setFaceMask(null); return; }
+    return renderer.setFaceMask(u.image, { shade: MASK_SHADE.custom, swapUV: u.swapUV });
+  }
+  renderer.setFaceMask(paintMask(m, settings.color), { shade: MASK_SHADE[m] ?? 0.6 });
+}
+
+async function onMaskImage(e, kind) {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f || !renderer) return;
+  const image = await createImageBitmap(f, { imageOrientation: "from-image", premultiplyAlpha: "none" });
+  if (kind === "swap") {
+    flash("Finding the face in your photo…");
+    let uv = null;
+    try { uv = await tracker.analyze(await createImageBitmap(image)); } catch (err) { console.warn(err); }
+    if (!uv) { flash("No face found in that photo. Try a clear, front-facing one."); image.close(); return; }
+    userMasks.swap?.image.close?.();
+    userMasks.swap = { image, swapUV: uv };
+  } else {
+    userMasks.custom?.image.close?.();
+    userMasks.custom = { image };
+  }
+  set("mask", kind);
+  flash(kind === "swap" ? "Face swap ready" : "Mask loaded");
+}
+
+async function downloadTemplate() {
+  const blob = await templateBlob();
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: "tracked-mask-template.png" });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  flash("Template saved: paint inside the outline, keep eyes and mouth transparent");
+}
+
+/** Smooths each face mesh with One Euro filters (faces are matched by position). */
+function smoothMeshes(faces, t) {
+  faces.sort((a, b) => a.nose.x - b.nose.x);
+  if (faces.length !== meshFilters.count) meshFilters.forEach((f) => f.reset());
+  meshFilters.count = faces.length;
+  faces.forEach((f, i) => {
+    if (!f.mesh) return;
+    meshFilters[i] ??= new MeshFilter();
+    f.mesh = meshFilters[i].filter(f.mesh, t);
+  });
+}
+
+class MeshFilter {
+  constructor() { this.f = Array.from({ length: 468 * 2 }, () => new OneEuro({ minCutoff: 2, beta: 6 })); }
+  reset() { this.f.forEach((x) => x.reset()); }
+  filter(a, t) {
+    const out = new Float32Array(a.length);
+    for (let i = 0; i < a.length; i++) out[i] = this.f[i].filter(a[i], t);
+    return out;
+  }
 }
 
 async function onImagePicked(e) {
@@ -343,6 +438,7 @@ async function start() {
     return;
   }
   capture = new Capture(canvas, (msg) => flash(msg));
+  applyMask();
   tracker = new HandTracker({ detectWidth: device.detectWidth });
   keepAwake();
   tracker.onResult = onVision;
@@ -412,7 +508,14 @@ function onFrame() {
   const t = performance.now();
   tracker.submit(video, t, extrasWanted());
   update(t / 1000);
-  renderer.draw(video, frameState(t / 1000));
+  const fs = frameState(t / 1000);
+  renderer.draw(video, fs);
+  if (settings.mask !== "none") {
+    const inFrame = settings.maskArea === "frame";
+    if (!inFrame || (fs.quad && fs.alpha > 0)) {
+      renderer.drawMasks(fs.faces, { inFrame, alpha: inFrame ? fs.alpha : 1, mirror: fs.mirror });
+    }
+  }
   capture.afterDraw(); // photo snapshot must happen right after drawing (drawing buffer isn't preserved)
   if (state.debug) drawDebug();
   countFps(t);
@@ -424,18 +527,22 @@ function onFrame() {
  * frames, so each runs at ~half the camera rate.
  */
 function extrasWanted() {
-  if (!state.quad) return {};
-  const face = settings.face !== "none";
-  const seg = TARGETS[settings.target] != null;
+  const mesh = settings.mask !== "none" && (settings.mask !== "custom" && settings.mask !== "swap" || !!userMasks[settings.mask]);
+  const maskAlways = mesh && settings.maskArea === "always";
+  if (!state.quad && !maskAlways) return {};
+  const face = settings.face !== "none" || mesh;
+  const seg = !!state.quad && TARGETS[settings.target] != null;
   if (!face && !seg) return {};
   state.frameNo++;
   if (state.frameNo % extrasEvery) return {};          // device-dependent cadence
-  if (face && seg) return (state.frameNo / extrasEvery) % 2 ? { face: true } : { seg: true };
-  return { face, seg };
+  if (face && seg) return (state.frameNo / extrasEvery) % 2 ? { face: true, mesh } : { seg: true };
+  return { face, mesh, seg };
 }
 
 function frameState(time) {
-  const faces = time - state.facesAt < FACE_TTL ? state.faces : [];
+  // keep the last faces for ~3 face-model updates, so slow devices don't make masks flicker
+  const ttl = Math.max(FACE_TTL, (3 * extrasEvery) / Math.max(1, stats.dps));
+  const faces = time - state.facesAt < ttl ? state.faces : [];
   const on = selectFaces(faces, settings.who);
   return {
     quad: state.quad,
@@ -457,7 +564,9 @@ function onVision(result, timestampMs) {
   const mirror = state.facing === "user";
   state.hands = mirror ? result.hands.map(mirrorLandmarks) : result.hands;
   if (result.faces) {
-    state.faces = mirror ? result.faces.map(mirrorFace) : result.faces;
+    const faces = mirror ? result.faces.map(mirrorFace) : result.faces;
+    smoothMeshes(faces, timestampMs / 1000);
+    state.faces = faces;
     state.facesAt = performance.now() / 1000;
   }
   if (result.mask) renderer.setMask(result.mask);
@@ -551,4 +660,4 @@ document.addEventListener("visibilitychange", () => {
 });
 
 // test hook (used by automated browser tests only)
-window.__tracked = { state, settings, set, onVision: (...a) => onVision(...a) };
+window.__tracked = { state, settings, set, onVision: (...a) => onVision(...a), get renderer() { return renderer; } };

@@ -15,6 +15,14 @@ self.onmessage = async ({ data }) => {
     return;
   }
 
+  if (data.type === "analyze") {
+    let mesh = null, error = null;
+    try { mesh = await vision.analyze(data.bitmap); } catch (err) { error = String(err?.message || err); }
+    data.bitmap.close();
+    self.postMessage({ type: "analyzed", id: data.id, mesh, error }, mesh ? [mesh.buffer] : []);
+    return;
+  }
+
   if (data.type === "frame") {
     const { bitmap, timestamp, want } = data;
     let result = { hands: [] };
@@ -26,6 +34,7 @@ self.onmessage = async ({ data }) => {
       bitmap.close();
     }
     const transfer = result.mask ? [result.mask.data.buffer] : [];
+    for (const f of result.faces || []) if (f.mesh) transfer.push(f.mesh.buffer);
     self.postMessage({ type: "result", result, timestamp }, transfer);
   }
 };

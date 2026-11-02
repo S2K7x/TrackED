@@ -56,7 +56,29 @@ export class HandTracker {
     await this.vision.init("GPU");
   }
 
+  /**
+   * Detects the face in a still image (for face swap).
+   * @param {ImageBitmap} bitmap  consumed (transferred / closed)
+   * @returns {Promise<Float32Array|null>}
+   */
+  analyze(bitmap) {
+    if (this.mode !== "worker") return this.vision.analyze(bitmap).finally(() => bitmap.close());
+    const id = (this.nextId = (this.nextId || 0) + 1);
+    this.pending ??= new Map();
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.worker.postMessage({ type: "analyze", id, bitmap }, [bitmap]);
+    });
+  }
+
   #onWorkerMessage(data) {
+    if (data.type === "analyzed") {
+      const p = this.pending?.get(data.id);
+      this.pending?.delete(data.id);
+      if (data.error) p?.reject(new Error(data.error));
+      else p?.resolve(data.mesh);
+      return;
+    }
     if (data.type === "result") {
       this.busy = false;
       this.onResult(data.result, data.timestamp);
@@ -68,7 +90,7 @@ export class HandTracker {
 
   /**
    * Submits a video frame; silently drops it if the previous one is still being processed.
-   * @param {{face?: boolean, seg?: boolean}} want  extra models to run on this frame
+   * @param {{face?: boolean, mesh?: boolean, seg?: boolean}} want  extra models to run on this frame
    */
   async submit(video, timestamp, want = {}) {
     if (this.busy || !video.videoWidth) return;

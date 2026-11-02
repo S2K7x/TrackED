@@ -10,6 +10,11 @@
 //      segmentation target (people, background, hair, clothes, skin)
 //   4. draws the border (neon, thick, rainbow) and the outer glow
 
+import { UV, TRIS } from "./face-mesh-data.js";
+import { swapAlpha } from "./masks.js";
+
+const MESH = { UV, TRIS, swapAlpha: swapAlpha() };
+
 export const EFFECTS = ["none", "neon", "tint", "invert", "bw", "glitch", "thermal", "pixel", "cartoon", "kaleido", "loupe", "image"];
 export const FACE_FX = ["none", "bigeyes", "bigmouth", "alien", "swirl", "balloon", "tiny", "anon", "laser"];
 export const SHAPES = ["rect", "round", "ellipse", "circle", "heart", "star", "diamond"];
@@ -25,46 +30,13 @@ void main() {
   gl_Position = vec4(p, 0.0, 1.0);
 }`;
 
-const FRAG = `#version 300 es
-precision highp float;
-precision highp int;
-in vec2 vUv;
-out vec4 outColor;
-
-#define MAX_FACES ${MAX_FACES}
-const float PI = 3.14159265;
-
-uniform sampler2D uVideo;
-uniform sampler2D uOverlay;
-uniform sampler2D uMask;        // R8 category mask (selfie_multiclass)
-uniform sampler2D uFrozen;      // snapshot shown inside the frame while frozen
-uniform bool  uFreeze;
+// Frame geometry shared by the main pass and the face-mask pass.
+const FRAME_GLSL = `
 uniform vec2  uQuad[4];
-uniform float uAlpha;           // 0 = no frame
-uniform int   uEffect;
 uniform int   uShape;
-uniform int   uBorder;
-uniform bool  uMirror;
-uniform vec2  uTexel;           // 1 / video size
-uniform float uAspect;          // video width / height
 uniform float uFrameAspect;     // frame width / height, in pixels
-uniform float uTime;
-uniform vec2  uCover;           // overlay "object-fit: cover" scale
-uniform vec3  uColor;           // user colour (tint, neon, border, laser)
-uniform int   uTargetBits;      // bitmask of mask categories; 0 = everything
-uniform int   uFaceFx;
-uniform int   uFaceCount;
-uniform vec2  uFacePts[MAX_FACES * 4]; // eyeL, eyeR, mouth, nose
-uniform float uFaceR[MAX_FACES];       // face half-width (image-height units), 0 = skip
-
-// ---------- helpers ----------
 float cross2(vec2 a, vec2 b) { return a.x * b.y - a.y * b.x; }
 float dot2(vec2 v) { return dot(v, v); }
-float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
-vec2 src(vec2 uv) { return vec2(uMirror ? 1.0 - uv.x : uv.x, uv.y); }   // display → camera texture
-bool gInside = false;            // true while shading pixels inside the frame
-vec3 cam(vec2 uv) { return (uFreeze && gInside) ? texture(uFrozen, src(uv)).rgb : texture(uVideo, src(uv)).rgb; }
-vec3 hue(float h) { return clamp(abs(fract(h + vec3(0.0, 2.0, 1.0) / 3.0) * 6.0 - 3.0) - 1.0, 0.0, 1.0); }
 
 // Inverse bilinear interpolation (Inigo Quilez). Corners a,b,c,d map to
 // (0,0),(1,0),(1,1),(0,1). Returns (-1,-1) when p has no solution.
@@ -128,6 +100,58 @@ float shapeSd(vec2 f) {
   return (abs(S.x) + abs(S.y) - 1.0);                         // diamond
 }
 
+
+// Distance (screen pixels, positive inside) from p to the frame shape's edge.
+// fuv = position inside the frame, fw = its screen-space derivative.
+float frameDist(vec2 p, out vec2 fuv, out vec2 fw) {
+  fuv = invBilinear(p, uQuad[0], uQuad[1], uQuad[2], uQuad[3]);
+  fw = max(fwidth(fuv), vec2(1e-6));
+  if (uShape == 0) {
+    vec2 d2 = min(fuv, 1.0 - fuv) / fw;
+    return min(d2.x, d2.y);
+  }
+  float sd = shapeSd(fuv);
+  return -sd / max(fwidth(sd), 1e-6);
+}
+`;
+
+const FRAG = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 vUv;
+out vec4 outColor;
+
+#define MAX_FACES ${MAX_FACES}
+const float PI = 3.14159265;
+
+uniform sampler2D uVideo;
+uniform sampler2D uOverlay;
+uniform sampler2D uMask;        // R8 category mask (selfie_multiclass)
+uniform sampler2D uFrozen;      // snapshot shown inside the frame while frozen
+uniform bool  uFreeze;
+uniform float uAlpha;           // 0 = no frame
+uniform int   uEffect;
+uniform int   uBorder;
+uniform bool  uMirror;
+uniform vec2  uTexel;           // 1 / video size
+uniform float uAspect;          // video width / height
+uniform float uTime;
+uniform vec2  uCover;           // overlay "object-fit: cover" scale
+uniform vec3  uColor;           // user colour (tint, neon, border, laser)
+uniform int   uTargetBits;      // bitmask of mask categories; 0 = everything
+uniform int   uFaceFx;
+uniform int   uFaceCount;
+uniform vec2  uFacePts[MAX_FACES * 4]; // eyeL, eyeR, mouth, nose
+uniform float uFaceR[MAX_FACES];       // face half-width (image-height units), 0 = skip
+
+// ---------- helpers ----------
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+vec2 src(vec2 uv) { return vec2(uMirror ? 1.0 - uv.x : uv.x, uv.y); }   // display → camera texture
+bool gInside = false;            // true while shading pixels inside the frame
+vec3 cam(vec2 uv) { return (uFreeze && gInside) ? texture(uFrozen, src(uv)).rgb : texture(uVideo, src(uv)).rgb; }
+vec3 hue(float h) { return clamp(abs(fract(h + vec3(0.0, 2.0, 1.0) / 3.0) * 6.0 - 3.0) - 1.0, 0.0, 1.0); }
+
+${FRAME_GLSL}
 // ---------- face warps ----------
 vec2 bulge(vec2 uv, vec2 c, float R, float s) {   // s>0 magnify, s<0 shrink
   vec2 d = (uv - c) * vec2(uAspect, 1.0);
@@ -283,17 +307,8 @@ void main() {
   vec3 base = cam(vUv);
   if (uAlpha <= 0.0) { outColor = vec4(base, 1.0); return; }
 
-  vec2 fuv = invBilinear(vUv, uQuad[0], uQuad[1], uQuad[2], uQuad[3]);
-  // distance to the shape edge in screen pixels, positive inside
-  vec2 fw = max(fwidth(fuv), vec2(1e-6));
-  float d;
-  if (uShape == 0) {
-    vec2 d2 = min(fuv, 1.0 - fuv) / fw;
-    d = min(d2.x, d2.y);
-  } else {
-    float sd = shapeSd(fuv);
-    d = -sd / max(fwidth(sd), 1e-6);
-  }
+  vec2 fuv, fw;
+  float d = frameDist(vUv, fuv, fw);      // distance to the shape edge in screen pixels, positive inside
   float inside = clamp(d + 0.5, 0.0, 1.0);
   bool near = all(greaterThan(fuv, vec2(-0.3))) && all(lessThan(fuv, vec2(1.3))) && max(fw.x, fw.y) < 0.05;
 
@@ -321,12 +336,80 @@ void main() {
   outColor = vec4(mix(base, fx, inside * uAlpha), 1.0);
 }`;
 
+// ---------- face-mask pass: the 468-point face mesh, textured in canonical UV space ----------
+const MASK_VERT = `#version 300 es
+in vec2 aPos;      // landmark position, display space [0,1], y down
+in vec2 aTex;      // texture coordinate (canonical UV, or source-photo landmark for a face swap)
+in float aAlpha;   // per-vertex fade (face-swap edges, eyes, mouth)
+out vec2 vScreen;
+out vec2 vTex;
+out float vAlpha;
+void main() {
+  vScreen = aPos; vTex = aTex; vAlpha = aAlpha;
+  gl_Position = vec4(aPos.x * 2.0 - 1.0, 1.0 - aPos.y * 2.0, 0.0, 1.0);
+}`;
+
+const MASK_FRAG = `#version 300 es
+precision highp float;
+precision highp int;
+in vec2 vScreen;
+in vec2 vTex;
+in float vAlpha;
+out vec4 outColor;
+uniform sampler2D uVideo;
+uniform sampler2D uMaskTex;
+uniform bool  uMirror;
+uniform vec2  uTexel;
+uniform bool  uInFrame;    // only visible inside the hand frame
+uniform float uAlpha;      // global fade
+uniform float uShade;      // how much live lighting modulates the mask (0..1)
+uniform float uFeather;    // use the per-vertex fade (face swap)
+uniform bool  uSwap;       // colour-match a photo to the live face
+${FRAME_GLSL}
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+vec2 src(vec2 uv) { return vec2(uMirror ? 1.0 - uv.x : uv.x, uv.y); }
+// low-frequency live colour around p (lighting, skin tone)
+vec3 liveLow(vec2 p) {
+  vec2 t = uTexel * 9.0;
+  return 0.25 * (texture(uVideo, src(p + vec2(t.x, t.y))).rgb + texture(uVideo, src(p - vec2(t.x, t.y))).rgb
+               + texture(uVideo, src(p + vec2(t.x, -t.y))).rgb + texture(uVideo, src(p + vec2(-t.x, t.y))).rgb);
+}
+void main() {
+  vec2 fuv, fw;
+  float d = frameDist(vScreen, fuv, fw);   // evaluated in uniform control flow (uses fwidth)
+  vec4 m = texture(uMaskTex, vTex);
+  float a = m.a * mix(1.0, vAlpha, uFeather) * uAlpha;
+  if (uInFrame) a *= clamp(d + 0.5, 0.0, 1.0);
+  vec3 col = m.rgb;
+  if (uSwap) {
+    // local colour transfer: photo × (live low-pass / photo low-pass) carries the
+    // live lighting and skin tone onto the photo, hiding most of the seam
+    vec2 tx = dFdx(vTex) * 9.0, ty = dFdy(vTex) * 9.0;
+    vec3 pl = 0.25 * (texture(uMaskTex, vTex + tx + ty).rgb + texture(uMaskTex, vTex - tx - ty).rgb
+                    + texture(uMaskTex, vTex + tx - ty).rgb + texture(uMaskTex, vTex - tx + ty).rgb);
+    col = clamp(col * clamp((liveLow(vScreen) + 0.03) / (pl + 0.03), 0.4, 2.2), 0.0, 1.0);
+  } else if (uShade > 0.0) {
+    col *= mix(1.0, clamp(luma(liveLow(vScreen)) / 0.5, 0.35, 1.7), uShade);
+  }
+  if (a < 0.004) discard;
+  outColor = vec4(col, a);
+}`;
+
 function compile(gl, type, src) {
   const s = gl.createShader(type);
   gl.shaderSource(s, src);
   gl.compileShader(s);
   if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
   return s;
+}
+
+function link(gl, vs, fs) {
+  const prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  return prog;
 }
 
 function makeTexture(gl, filter = gl.LINEAR) {
@@ -354,11 +437,8 @@ export class Renderer {
     this.gl = gl;
     this.canvas = canvas;
 
-    const prog = gl.createProgram();
-    gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VERT));
-    gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, FRAG));
-    gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    const prog = link(gl, VERT, FRAG);
+    this.prog = prog;
     gl.useProgram(prog);
     this.vao = gl.createVertexArray(); // attribute-less draw, but WebGL2 still wants a VAO bound
     gl.bindVertexArray(this.vao);
@@ -383,6 +463,96 @@ export class Renderer {
     this.overlaySize = [1, 1];
     this.setOverlay(null);
     this.setMask(null);
+    this.#initMaskPass();
+  }
+
+  #initMaskPass() {
+    const gl = this.gl;
+    const prog = link(gl, MASK_VERT, MASK_FRAG);
+    this.maskProg = prog;
+    this.mu = {};
+    for (const n of ["uVideo", "uMaskTex", "uMirror", "uTexel", "uInFrame", "uAlpha", "uShade", "uFeather", "uSwap", "uQuad", "uShape", "uFrameAspect"]) {
+      this.mu[n] = gl.getUniformLocation(prog, n);
+    }
+    this.maskVao = gl.createVertexArray();
+    gl.bindVertexArray(this.maskVao);
+    const attrib = (name, size, data, usage) => {
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, data, usage);
+      const loc = gl.getAttribLocation(prog, name);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+      return buf;
+    };
+    this.posBuf = attrib("aPos", 2, new Float32Array(468 * 2), gl.DYNAMIC_DRAW);
+    this.texBuf = attrib("aTex", 2, MESH.UV, gl.STATIC_DRAW);
+    this.alphaBuf = attrib("aAlpha", 1, MESH.swapAlpha, gl.STATIC_DRAW);
+    const idx = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idx);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, MESH.TRIS, gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+    this.faceMaskTex = makeTexture(gl);
+    this.maskOpts = null;
+    // a front-facing triangle (contains the nose tip) tells us the on-screen winding
+    let t = 0;
+    while (t < MESH.TRIS.length && ![MESH.TRIS[t], MESH.TRIS[t + 1], MESH.TRIS[t + 2]].includes(1)) t += 3;
+    this.refTri = [MESH.TRIS[t], MESH.TRIS[t + 1], MESH.TRIS[t + 2]];
+  }
+
+  /**
+   * Sets the face mask.
+   * @param {TexImageSource|null} image  RGBA texture (canonical UV layout, or a photo for a face swap)
+   * @param {{shade?: number, swapUV?: Float32Array}} opts  swapUV = the photo's own landmarks (face swap)
+   */
+  setFaceMask(image, opts = {}) {
+    const gl = this.gl;
+    if (!image) { this.maskOpts = null; return; }
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.faceMaskTex);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.texBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, opts.swapUV || MESH.UV, gl.STATIC_DRAW);
+    this.maskOpts = { shade: opts.shade ?? 0.6, swap: !!opts.swapUV };
+  }
+
+  /**
+   * Draws the mask on each selected face (after draw()).
+   * @param {{mesh: Float32Array, on?: boolean}[]} faces  meshes in display space
+   * @param {{inFrame: boolean, alpha: number, mirror: boolean}} s
+   */
+  drawMasks(faces, s) {
+    if (!this.maskOpts || !faces?.length) return;
+    const gl = this.gl, u = this.mu, o = this.maskOpts;
+    gl.useProgram(this.maskProg);
+    gl.bindVertexArray(this.maskVao);
+    gl.uniform1i(u.uVideo, 0);
+    gl.uniform1i(u.uMaskTex, 4);
+    gl.uniform1i(u.uMirror, s.mirror ? 1 : 0);
+    gl.uniform2f(u.uTexel, 1 / this.canvas.width, 1 / this.canvas.height);
+    gl.uniform1i(u.uInFrame, s.inFrame ? 1 : 0);
+    gl.uniform1f(u.uAlpha, s.alpha);
+    gl.uniform1f(u.uShade, o.shade);
+    gl.uniform1f(u.uFeather, o.swap ? 1 : 0);
+    gl.uniform1i(u.uSwap, o.swap ? 1 : 0);
+    gl.uniform2fv(u.uQuad, this.quadData);
+    gl.uniform1i(u.uShape, this.shapeIndex || 0);
+    gl.uniform1f(u.uFrameAspect, this.frameAspect || 1);
+    gl.enable(gl.BLEND);
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.CULL_FACE);
+    gl.cullFace(gl.BACK);
+    for (const f of faces) {
+      if (!f.mesh || f.on === false) continue;
+      gl.frontFace(frontWinding(f.mesh, this.refTri) ? gl.CCW : gl.CW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, f.mesh);
+      gl.drawElements(gl.TRIANGLES, MESH.TRIS.length, gl.UNSIGNED_SHORT, 0);
+    }
+    gl.disable(gl.CULL_FACE);
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
   }
 
   /** @param {TexImageSource|null} img */
@@ -435,6 +605,8 @@ export class Renderer {
       this.canvas.height = h;
     }
     gl.viewport(0, 0, w, h);
+    gl.useProgram(this.prog);
+    gl.bindVertexArray(this.vao);
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.videoTex);
@@ -451,7 +623,9 @@ export class Renderer {
       s.quad.forEach((p, i) => { this.quadData[i * 2] = p.x; this.quadData[i * 2 + 1] = p.y; });
       gl.uniform2fv(u.uQuad, this.quadData);
       const [fw, fh] = frameSize(s.quad, w, h);
-      gl.uniform1f(u.uFrameAspect, fh > 0 ? Math.max(0.05, Math.min(20, fw / fh)) : 1);
+      this.frameAspect = fh > 0 ? Math.max(0.05, Math.min(20, fw / fh)) : 1;
+      this.shapeIndex = Math.max(0, SHAPES.indexOf(s.shape));
+      gl.uniform1f(u.uFrameAspect, this.frameAspect);
       gl.uniform2fv(u.uCover, coverScale(fw, fh, this.overlaySize));
       gl.uniform1i(u.uEffect, Math.max(0, EFFECTS.indexOf(s.effect)));
       gl.uniform1i(u.uShape, Math.max(0, SHAPES.indexOf(s.shape)));
@@ -481,6 +655,15 @@ export class Renderer {
     gl.uniform2fv(u.uFacePts, this.facePts);
     gl.uniform1fv(u.uFaceR, this.faceR);
   }
+}
+
+/**
+ * True when the reference (front-facing) triangle is counter-clockwise in clip
+ * space; with back-face culling this hides the far side of a turned head.
+ */
+export function frontWinding(mesh, [a, b, c]) {
+  const x = (i) => mesh[i * 2] * 2 - 1, y = (i) => 1 - mesh[i * 2 + 1] * 2;
+  return (x(b) - x(a)) * (y(c) - y(a)) - (y(b) - y(a)) * (x(c) - x(a)) > 0;
 }
 
 /** Average width / height of the frame quad, in pixels. */

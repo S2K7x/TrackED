@@ -18,6 +18,7 @@ The bottom sheet has five tabs:
 |---|---|
 | **Effect** | None, Neon, Tint, Thermal, Cartoon, Glitch, Pixel, Kaleido, Loupe ×2, Invert, Mono, Image (plus your own image) |
 | **Face** | Big eyes, Big mouth, Alien, Balloon head, Tiny face, Swirl, Laser eyes, Anonymize. Applied to **everyone**, **me** (the closest face) or **others** (up to 4 faces), and only while they are inside the frame |
+| **Mask** | Face masks that follow your face in 3D: Wireframe, Visor, Skull, Gold, Feline, War paint (all original designs), **Your mask** (any image painted on the downloadable template) and **Face swap** (pick a photo: its face is mapped onto yours with live lighting). Shown inside the frame only, or always on |
 | **Target** | Limits the colour effect to: Everything, People, Background, Skin, Hair or Clothes (person segmentation) |
 | **Shape** | Rectangle, Rounded, Ellipse, Circle, Heart, Star, Diamond |
 | **Color** | 9 presets plus a custom picker (drives Neon, Tint, the border and laser eyes); neon, animated rainbow, thick or no border |
@@ -56,9 +57,26 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `src/renderer.js` | **WebGL2** renderer: shapes, effects, face warps and masks in a single fragment shader |
 | `src/faces.js` | Face anchors (eyes, mouth, nose, size), me/others selection, segmentation categories |
 | `src/capture.js` | Photo and video capture of the canvas |
+| `src/masks.js` | Built-in masks painted in UV space, mask template, face-swap fade |
+| `src/face-mesh-data.js` | Generated canonical mesh data (UVs, triangles, contours) |
+| `tools/gen-face-mesh.mjs` | Generator for the mesh data |
 | `src/device.js` | Device profile: mobile/desktop, performance tier, detection size, model cadence |
 | `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
 | `src/geometry.js` | Builds the quad between the two hands |
+
+## Face masks: how they work
+- MediaPipe Face Landmarker returns a 468-point face mesh. `tools/gen-face-mesh.mjs` takes MediaPipe's [canonical face model](https://github.com/google-ai-edge/mediapipe/blob/master/mediapipe/modules/face_geometry/data/canonical_face_model.obj) (Apache-2.0) and generates `src/face-mesh-data.js` with:
+  - the UV layout of every landmark,
+  - 898 triangles,
+  - ordered contours (face oval, eyes, lips, brows).
+  The `v` and `vt` records in the OBJ are ordered differently, so each landmark's UV is recovered from the face records, as described in [this Codrops write-up](https://tympanus.net/codrops/2026/09/06/building-a-real-time-3d-face-mask-with-mediapipe-threlte-and-three-js/).
+- Every mask is an RGBA texture in that UV space. A second WebGL pass draws the mesh at the live landmark positions with that texture:
+  - **Back-face culling** hides the far side of a turned head. The on-screen winding comes from a reference triangle around the nose, so it also works with the mirrored selfie view.
+  - **Live lighting** modulates the mask with a low-pass of the camera image, so shadows and highlights carry over.
+  - **Frame clipping** uses the same shape SDF code as the frame, so the mask only appears inside the frame.
+- **Your mask:** download the template (mesh wireframe, eyes, lips), paint on it in any editor, export a PNG with transparency, and load it.
+- **Face swap:** the photo goes through MediaPipe in IMAGE mode, and its own landmarks become the texture coordinates. Per-vertex alpha fades the outline and opens the eyes and mouth, so the live eyes blink and the mouth talks. A local colour transfer (live low-pass ÷ photo low-pass) matches skin tone and lighting.
+- **Smoothing:** meshes go through a One Euro filter, with one filter bank per face. On slow devices the last face is kept for about 3 model updates, so masks don't flicker.
 
 ## How it works
 - **Rendering is fully on the GPU.** The camera frame is a texture. For each pixel, the shader inverts the bilinear mapping of the frame quad to get (u, v) inside the frame. That gives anti-aliased edges, a glowing border and a perspective-warped overlay image, without any `getImageData`.
@@ -70,3 +88,7 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 - **Cost control.** The face and segmentation models download on first use and only run while a frame is on screen. When both are active, they alternate frames.
 - **One Euro filter** gives strong smoothing when the hands are still (no jitter) and light smoothing when they move fast (no lag).
 - **Multiple MediaPipe tasks in a module worker.** MediaPipe normally loads only one task there (`ModuleFactory not set`). A `self.import` hook reuses the WASM factory for every task.
+
+## Credits
+- Face, hand and segmentation models and the canonical face mesh: [Google MediaPipe](https://github.com/google-ai-edge/mediapipe), Apache License 2.0.
+- 2D signed distance functions: Inigo Quilez.
