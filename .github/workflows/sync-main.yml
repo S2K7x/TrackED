@@ -23,6 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: npm run check   # every module parses (catches syntax errors in browser-only files)
       - run: npm test
 
   merge:

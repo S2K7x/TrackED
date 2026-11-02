@@ -5,6 +5,13 @@
 2. **Blender session**: build more **original** masks and helmets and export `.glb` files for the 3D tab. Never copyrighted characters. First one done: **Aero** helmet (`assets/models/`, script `tools/blender-helmet.py`). It is a built-in tile in the 3D tab (`glb` option in `options.js`, fetched once, anchor "As modelled").
 3. ~~Original hero mask~~ (done: **Kitsune**, colour-aware, in `masks.js`). More ideas: oni / hannya-inspired variants, a half mask.
 
+## Music mode ideas
+- Chord mode (left hand finger count picks the chord, right hand strums), arpeggiator synced to a BPM.
+- Quantised looper (BPM + bars) and multiple loop layers; metronome.
+- Velocity from hand depth (world z), vibrato from hand shake on the theremin.
+- MIDI CC output (hand height → filter / mod wheel) and MIDI clock.
+- Audio-reactive visuals in effects mode (the frame pulsing with the music).
+
 ## Ideas backlog
 - Jaw-open / blink blendshapes driving 3D accessories (visor opening, eyes glowing).
 - Hair segmentation + hood mask covering the whole head.
@@ -22,6 +29,7 @@
 - Service worker gain on the second launch.
 - Wake lock, haptics, share sheet and Add to Home Screen on phones.
 - Contextual hints (dark, no hands, one hand, too close) with a live camera.
+- Music mode with real hands: pinch thresholds, harp crossing feel, drum strike speed (`minSpeed`), audible latency, Web MIDI with a real DAW, audio in recorded videos (Safari MP4 + AAC).
 
 ## Done (high level)
-Prototype → WebGL2 + worker + One Euro → face filters, segmentation targets, shapes, colours, capture → light frosted-glass redesign in English → phone/desktop layouts, freeze, timer, pinch → face masks, custom masks, face swap → 3D accessories + user `.glb` → display modes (appear & disappear / inside frame / always) → latency prediction, signs, refinement, caching → research-driven robustness (handedness, 3D signs, temporal mask, tuned filter) → error handling and recovery → onboarding (priming, checklist, tutorial, hints, help) → CI + automatic `main` sync → in-app "make your own" guides → 3D model fine-tune panel (saved per model) + Blender reference head with "As modelled" anchor.
+Prototype → WebGL2 + worker + One Euro → face filters, segmentation targets, shapes, colours, capture → light frosted-glass redesign in English → phone/desktop layouts, freeze, timer, pinch → face masks, custom masks, face swap → 3D accessories + user `.glb` → display modes (appear & disappear / inside frame / always) → latency prediction, signs, refinement, caching → research-driven robustness (handedness, 3D signs, temporal mask, tuned filter) → error handling and recovery → onboarding (priming, checklist, tutorial, hints, help) → CI + automatic `main` sync → in-app "make your own" guides → music mode (theremin, keys, harp, drums, looper, MIDI, recording with sound) → 3D model fine-tune panel (saved per model) + Blender reference head with "As modelled" anchor.

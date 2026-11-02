@@ -4,6 +4,15 @@
 // Video: canvas.captureStream() + MediaRecorder, MP4 when supported (Safari,
 // recent Chrome) so it can be posted directly, WebM otherwise.
 
+// with an audio track (music mode): containers + codecs that carry both
+const AV_CANDIDATES = [
+  "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+  "video/webm;codecs=vp9,opus",
+  "video/webm;codecs=vp8,opus",
+  "video/mp4",
+  "video/webm",
+];
+
 const MIME_CANDIDATES = [
   "video/mp4;codecs=avc1.42E01E",
   "video/mp4",
@@ -12,8 +21,8 @@ const MIME_CANDIDATES = [
   "video/webm",
 ];
 
-export function pickMime(isSupported = (t) => globalThis.MediaRecorder?.isTypeSupported?.(t)) {
-  return MIME_CANDIDATES.find((t) => isSupported(t)) || "";
+export function pickMime(isSupported = (t) => globalThis.MediaRecorder?.isTypeSupported?.(t), withAudio = false) {
+  return (withAudio ? AV_CANDIDATES : MIME_CANDIDATES).find((t) => isSupported(t)) || "";
 }
 
 export class Capture {
@@ -62,10 +71,12 @@ export class Capture {
       this.notify("Video recording is not supported in this browser");
       return false;
     }
-    const mimeType = pickMime();
+    const audio = this.audioSource?.()?.getAudioTracks?.()[0] ?? null;
+    const mimeType = pickMime(undefined, !!audio);
     let stream, rec;
     try {
       stream = this.canvas.captureStream(30);
+      if (audio) stream.addTrack(audio.clone());   // clone: stopping the clip must not stop the synth
       rec = new MediaRecorder(stream, { mimeType: mimeType || undefined, videoBitsPerSecond: 6_000_000 });
     } catch (err) {
       stream?.getTracks().forEach((t) => t.stop());

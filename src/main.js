@@ -4,8 +4,10 @@ import { PointsFilter, OneEuro } from "./one-euro.js";
 import { paintMask, templateBlob } from "./masks.js";
 import { quadFromHands, quadArea, mirrorLandmarks, faceInFrame } from "./geometry.js";
 import { mirrorFace, selectFaces, TARGETS } from "./faces.js";
-import { OPTIONS, TABS, DEFAULTS, hexToRgb, exclusiveConflicts } from "./options.js";
+import { OPTIONS, TABS, MUSIC_TABS, DEFAULTS, hexToRgb, exclusiveConflicts } from "./options.js";
 import { Capture } from "./capture.js";
+import { AudioEngine } from "./music/audio.js";
+import { MusicMode } from "./music/controller.js";
 import { drawSpark, drawWaves } from "./art.js";
 import { deviceProfile } from "./device.js";
 import { classifySign, SignHold } from "./gestures.js";
@@ -32,6 +34,8 @@ const GROUP_TITLES = {
   shape: "Frame shape", color: "Color", border: "Border", mask: "Face mask", maskArea: "Show masks & 3D",
   accessory: "3D accessory", anchor: "Your model sits", size: "Size", fit: "Fine-tune your model",
   timer: "Capture timer", gesture: "Pinch gesture", signs: "One-hand signs",
+  instrument: "Instrument", sound: "Sound", looper: "Looper", scale: "Scale", root: "Key",
+  octave: "Range", snap: "Theremin pitch", reverb: "Reverb", echo: "Echo", midi: "MIDI output",
 };
 
 // ---------------- State ----------------
@@ -103,18 +107,31 @@ const el = (tag, props = {}, html) => {
   return n;
 };
 
+const isMusic = () => settings.mode === "music";
+const currentTabs = () => (isMusic() ? MUSIC_TABS : TABS);
+const tabByMode = { effects: "effect", music: "instrument" };
+
 function renderTabs() {
-  tabsEl.replaceChildren(...TABS.map((t) => {
-    const b = el("button", { className: t.id === activeTab ? "on" : "", role: "tab" }, `<i class="dot"></i>${t.label}`);
-    b.setAttribute("aria-selected", t.id === activeTab);
-    b.addEventListener("click", () => { activeTab = t.id; renderTabs(); renderChips(); });
+  // mode switch: Effects | Music (separate tabs, separate settings)
+  $("#modes").replaceChildren(...OPTIONS.mode.map((o) => {
+    const b = el("button", { className: settings.mode === o.value ? "on" : "", role: "radio" }, o.label);
+    b.setAttribute("aria-checked", settings.mode === o.value);
+    b.addEventListener("click", () => setMode(o.value));
     return b;
   }));
+  if (!currentTabs().some((t) => t.id === activeTab)) activeTab = tabByMode[settings.mode];
+  tabsEl.replaceChildren(...currentTabs().map((t) => {
+    const b = el("button", { className: t.id === activeTab ? "on" : "", role: "tab" }, `<i class="dot"></i>${t.label}`);
+    b.setAttribute("aria-selected", t.id === activeTab);
+    b.addEventListener("click", () => { activeTab = t.id; tabByMode[settings.mode] = t.id; renderTabs(); renderChips(); });
+    return b;
+  }));
+  $("#panel").classList.toggle("music", isMusic());
 }
 
 function renderChips() {
   document.documentElement.style.setProperty("--pick", settings.color);
-  const tab = TABS.find((t) => t.id === activeTab);
+  const tab = currentTabs().find((t) => t.id === activeTab) ?? currentTabs()[0];
   const nodes = [];
   tab.groups.forEach((group) => {
     const items = renderGroup(group);
@@ -138,6 +155,22 @@ function renderChips() {
 
 function renderGroup(group) {
   const on = (v) => settings[group] === v;
+  if (group === "instrument") {
+    return OPTIONS.instrument.map((o) => {
+      const b = el("button", { className: "fx" + (on(o.value) ? " on" : "") }, `<i></i>${o.label}`);
+      b.querySelector("i").style.background = o.tile;
+      b.addEventListener("click", () => set("instrument", o.value));
+      return b;
+    });
+  }
+  if (group === "looper") {
+    const st = music?.looper.state ?? "idle";
+    const label = { idle: "● Record a loop", recording: "■ Stop & play loop", playing: "✕ Clear loop" }[st];
+    const b = el("button", { className: "chip" + (st !== "idle" ? " on" : "") }, label);
+    b.addEventListener("click", toggleLoop);
+    return [b];
+  }
+  if (group === "midi" && !navigator.requestMIDIAccess) return [el("span", { className: "chip", textContent: "MIDI needs Chrome or Edge" })];
   if (group === "effect") {
     const nodes = OPTIONS.effect.map((o) => {
       const b = el("button", { className: "fx" + (on(o.value) ? " on" : "") }, `<i></i>${o.label}`);
@@ -223,8 +256,82 @@ function set(key, value, rerender = true) {
   if (key === "color") document.documentElement.style.setProperty("--pick", value);
   if (key === "mask" || (key === "color" && COLORED_MASKS.has(settings.mask))) applyMask();
   if (key === "accessory" || key === "color") applyAccessory();
+  if (MUSIC_KEYS.has(key)) applyMusicSettings(key);
   if ((key === "anchor" || key === "size") && settings.accessory === "model") three?.fitUserModel(settings.anchor, Number(settings.size), modelFit);
   if (rerender) renderChips();
+}
+
+// ---------------- Music mode ----------------
+// A separate mode with its own tabs: the frame, masks and 3D are switched off,
+// only the hand model runs (lowest latency), and the hands play an instrument.
+const MUSIC_KEYS = new Set(["instrument", "sound", "scale", "root", "octave", "snap", "reverb", "echo", "midi"]);
+const engine = new AudioEngine();
+let music = null;
+
+async function setMode(mode) {
+  if (mode === settings.mode) return;
+  settings.mode = mode;
+  saveSettings();
+  if (mode === "music") {
+    try {
+      await engine.ensure();             // runs inside the click: allowed to start audio
+    } catch (err) {
+      flash(err.message);
+      settings.mode = "effects";
+      renderTabs(); renderChips();
+      return;
+    }
+    music ??= new MusicMode(engine, $("#music-layer"));
+    applyMusicSettings();
+    $("#music-layer").hidden = false;
+    if (tutorial.active) { tutorial.stop(); $("#coach").hidden = true; }
+    showStatus("Show your hands to play");
+  } else {
+    music?.deactivate();
+    $("#music-layer").hidden = true;
+    $("#music-layer").getContext("2d").clearRect(0, 0, 1e5, 1e5);
+  }
+  if (capture?.recorder) toggleRecording(); // a clip never mixes the two modes
+  renderTabs();
+  renderChips();
+}
+
+async function applyMusicSettings(key) {
+  if (!music) return;
+  music.configure(settings);
+  engine.setReverb(settings.reverb);
+  engine.setEcho(settings.echo === "on");
+  if (key === "midi") {
+    if (settings.midi === "on") {
+      try {
+        const name = await engine.enableMidi();
+        flash(name ? `Sending MIDI to ${name}` : "No MIDI output found. Connect a device or a virtual port.");
+      } catch (err) {
+        flash(err.message);
+        settings.midi = "off";
+        renderChips();
+      }
+    } else engine.disableMidi();
+  }
+}
+
+function toggleLoop() {
+  if (!music) return;
+  const st = music.toggleLoop(performance.now() / 1000);
+  flash({ recording: "Recording a loop… play, then press again to loop it", playing: "Loop playing. Keep jamming on top!", idle: "Loop cleared" }[st]);
+  renderChips();
+}
+
+const musicLayer = $("#music-layer");
+function drawMusic(t) {
+  const w = stage.clientWidth, h = stage.clientHeight, dpr = Math.min(2, devicePixelRatio || 1);
+  if (musicLayer.width !== Math.round(w * dpr) || musicLayer.height !== Math.round(h * dpr)) {
+    musicLayer.width = Math.round(w * dpr);
+    musicLayer.height = Math.round(h * dpr);
+  }
+  const g = musicLayer.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  music.draw({ hands: state.hands, t, accent: settings.color, w, h });
 }
 
 // ---------------- Face masks ----------------
@@ -597,14 +704,17 @@ new ResizeObserver(() => {
 // ---------------- Keyboard (desktop) ----------------
 addEventListener("keydown", (e) => {
   if (!renderer || e.target.closest?.("input") || e.metaKey || e.ctrlKey || e.altKey) return;
-  const list = OPTIONS.effect.map((o) => o.value);
-  const i = list.indexOf(settings.effect);
-  if (e.key === "ArrowRight") set("effect", list[(i + 1) % list.length]);
-  else if (e.key === "ArrowLeft") set("effect", list[(i + list.length - 1) % list.length]);
+  const cycleKey = isMusic() ? "instrument" : "effect";
+  const list = OPTIONS[cycleKey].map((o) => o.value);
+  const i = list.indexOf(settings[cycleKey]);
+  if (e.key === "ArrowRight") set(cycleKey, list[(i + 1) % list.length]);
+  else if (e.key === "ArrowLeft") set(cycleKey, list[(i + list.length - 1) % list.length]);
   else if (e.key === "p" || e.key === "P") $("#photo").click();
   else if (e.key === "r" || e.key === "R") $("#rec").click();
   else if (e.key === "d" || e.key === "D") $("#debug").click();
   else if (e.key === "f" || e.key === "F") toggleFreeze();
+  else if (e.key === "m" || e.key === "M") setMode(isMusic() ? "effects" : "music");
+  else if ((e.key === "l" || e.key === "L") && isMusic()) toggleLoop();
   else if (e.key === "?") toggleHelp();
   else if (e.key === "Escape" && !$("#guidePanel").hidden) closeGuide();
   else if (e.key === "Escape" && !$("#helpPanel").hidden) toggleHelp(false);
@@ -615,6 +725,8 @@ addEventListener("keydown", (e) => {
 
 // ---------------- Startup ----------------
 async function start() {
+  // reopening in music mode: start the audio now, while we are inside the click
+  const audioReady = settings.mode === "music" ? engine.ensure().catch(() => null) : null;
   $("#start").hidden = true;
   $("#app").hidden = false;
   fitStage();
@@ -631,6 +743,15 @@ async function start() {
   }
   watchContextLoss();
   capture = new Capture(canvas, (msg) => flash(msg));
+  // in music mode, recordings carry the instrument's sound
+  capture.audioSource = () => (isMusic() && engine.ready ? engine.stream : null);
+  if (audioReady && await audioReady) {
+    music = new MusicMode(engine, $("#music-layer"));
+    applyMusicSettings();
+    $("#music-layer").hidden = false;
+  } else if (settings.mode === "music") {
+    settings.mode = "effects";
+  }
   applyMask();
   applyAccessory();
   tracker = new HandTracker({ detectWidth: device.detectWidth });
@@ -959,6 +1080,16 @@ function renderFrame() {
   if (!idle || (state.idleTick = !state.idleTick)) tracker.submit(video, t, extrasWanted());
   update(t / 1000);
   const fs = frameState(t / 1000);
+  if (isMusic() && music) {
+    // music mode: plain video, the instrument is drawn on its own layer
+    renderer.draw(video, { ...fs, quad: null, alpha: 0, faces: [] });
+    music.tick(t / 1000);              // loop playback; gestures are handled in onVision
+    drawMusic(t / 1000);
+    capture.afterDraw();
+    if (state.debug) drawDebug();
+    countFps(t);
+    return;
+  }
   renderer.draw(video, fs);
   const area = maskArea();
   if (settings.mask !== "none") {
@@ -988,6 +1119,7 @@ function renderFrame() {
  * frames, so each runs at ~half the camera rate.
  */
 function extrasWanted() {
+  if (isMusic()) return {};
   const mesh = settings.mask !== "none" && (settings.mask !== "custom" && settings.mask !== "swap" || !!userMasks[settings.mask]);
   const pose = settings.accessory !== "none" && !!three?.active;
   const maskAlways = (mesh || pose) && maskArea() === "always";
@@ -1059,6 +1191,13 @@ function onVision(result, timestampMs) {
   if (result.mask) renderer.setMask(result.mask);
 
   const aspect = video.videoWidth / video.videoHeight || 1;
+  if (isMusic()) {
+    // the hands play the instrument: no frame, pinch-to-switch or signs.
+    // Notes are triggered right here, as soon as the landmarks arrive (lowest latency).
+    if (state.hands.length) state.handsSeenAt = now;
+    if (music) showStatus(music.update(state.hands, now / 1000, aspect));
+    return;
+  }
   if (state.hands.length === 2) {
     const q = quadFromHands(state.hands[0], state.hands[1]);
     state.quad = quadFilter.filter(q, timestampMs / 1000);
@@ -1193,9 +1332,11 @@ document.addEventListener("visibilitychange", () => {
   if (!video.srcObject) return;
   if (document.hidden) {
     video.pause();
+    music?.release();
+    engine.suspend();
     if (capture?.recorder) toggleRecording(); // save the clip instead of recording a frozen frame
   }
-  else { video.play().catch(() => {}); keepAwake(); }
+  else { video.play().catch(() => {}); keepAwake(); if (isMusic()) engine.ensure().catch(() => {}); }
 });
 
 // Last-resort error reporting: log everything, tell the user at most every 5 s.
@@ -1216,4 +1357,4 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || location.
 }
 
 // test hook (used by automated browser tests only)
-window.__tracked = { state, settings, set, get modelFit() { return modelFit; }, onVision: (...a) => onVision(...a), get renderer() { return renderer; }, get three() { return three; }, get tracker() { return tracker; } };
+window.__tracked = { state, settings, set, get modelFit() { return modelFit; }, onVision: (...a) => onVision(...a), get renderer() { return renderer; }, get three() { return three; }, get tracker() { return tracker; }, get music() { return music; }, engine, setMode: (m) => setMode(m) };

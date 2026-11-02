@@ -124,6 +124,67 @@ export const OPTIONS = {
   ],
 };
 
+// ---------------- Music mode (separate tabs, separate settings) ----------------
+const NOTE_LABELS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+Object.assign(OPTIONS, {
+  mode: [
+    { value: "effects", label: "Effects" },
+    { value: "music", label: "Music" },
+  ],
+  instrument: [
+    { value: "theremin", label: "Theremin", tile: "repeating-linear-gradient(180deg,#1b2a1f 0 9px,var(--pick) 9px 10px),#1b2a1f" },
+    { value: "keys", label: "Keys", tile: "repeating-linear-gradient(90deg,#f4f4f1 0 9px,#141413 9px 11px)" },
+    { value: "harp", label: "Harp", tile: "repeating-linear-gradient(90deg,#2b1d14 0 7px,#f0cc62 7px 8px)" },
+    { value: "drums", label: "Drums", tile: "radial-gradient(circle at 30% 35%,var(--pick) 0 20%,transparent 21%),radial-gradient(circle at 70% 65%,#f4f4f1 0 20%,transparent 21%),#1d1d1b" },
+  ],
+  sound: [
+    { value: "glass", label: "Glass" },
+    { value: "pluck", label: "Pluck" },
+    { value: "synth", label: "Synth" },
+    { value: "pad", label: "Pad" },
+  ],
+  scale: [
+    { value: "pentatonic", label: "Pentatonic" },
+    { value: "minorPenta", label: "Minor penta" },
+    { value: "major", label: "Major" },
+    { value: "minor", label: "Minor" },
+    { value: "blues", label: "Blues" },
+    { value: "dorian", label: "Dorian" },
+    { value: "chromatic", label: "Chromatic" },
+  ],
+  root: NOTE_LABELS.map((label, i) => ({ value: String(i), label })),
+  octave: [
+    { value: "3", label: "Low" },
+    { value: "4", label: "Middle" },
+    { value: "5", label: "High" },
+  ],
+  snap: [
+    { value: "locked", label: "Locked to notes" },
+    { value: "soft", label: "Soft snap" },
+    { value: "free", label: "Free glide" },
+  ],
+  reverb: [
+    { value: "off", label: "Dry" },
+    { value: "room", label: "Room" },
+    { value: "hall", label: "Hall" },
+  ],
+  echo: [
+    { value: "off", label: "No echo" },
+    { value: "on", label: "Echo" },
+  ],
+  midi: [
+    { value: "off", label: "MIDI off" },
+    { value: "on", label: "Send MIDI" },
+  ],
+});
+
+/** Tabs of the music mode (the effects tabs are hidden while it is on). */
+export const MUSIC_TABS = [
+  { id: "instrument", label: "Instrument", groups: ["instrument", "sound", "looper"] },
+  { id: "notes", label: "Notes", groups: ["scale", "root", "octave", "snap"] },
+  { id: "mix", label: "Mix", groups: ["reverb", "echo", "midi"] },
+];
+
 export const TABS = [
   { id: "effect", label: "Effect", groups: ["effect"] },
   { id: "face", label: "Face", groups: ["face", "who"] },
@@ -161,7 +222,7 @@ export function exclusiveConflicts(settings, key, value) {
 }
 
 /** Tab groups drawn by custom UI (sliders) instead of OPTIONS chips. */
-export const PANEL_GROUPS = ["fit"];
+export const PANEL_GROUPS = ["fit", "looper"];
 
 export const DEFAULTS = {
   effect: "neon",
@@ -179,6 +240,16 @@ export const DEFAULTS = {
   timer: "3",
   gesture: "on",
   signs: "on",
+  mode: "effects",
+  instrument: "theremin",
+  sound: "glass",
+  scale: "pentatonic",
+  root: "0",
+  octave: "4",
+  snap: "locked",
+  reverb: "room",
+  echo: "off",
+  midi: "off",
 };
 
 /** "#ff2d55" → [1, 0.176, 0.333] */

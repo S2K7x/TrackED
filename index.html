@@ -65,6 +65,7 @@
 <main id="app" hidden>
   <div id="stage">
     <canvas id="out"></canvas>
+    <canvas id="music-layer" hidden></canvas>
     <canvas id="debug-layer" hidden></canvas>
   </div>
   <video id="cam" playsinline muted autoplay></video>
@@ -128,6 +129,7 @@
     <div class="grid">
       <article><b>The frame</b><p>Make an <em>L</em> with the thumb and index of each hand. Everything inside the frame changes. Pinch it shut and reopen quickly to switch effect.</p></article>
       <article><b>One-hand signs</b><p>👍 hold for a photo · ✌️ next effect · 🖐 freeze the frame.</p></article>
+      <article><b>Music mode</b><p>Switch <em>Effects → Music</em> at the top of the panel (or <kbd>M</kbd>). Theremin, Keys (pinch thumb + finger), Harp (sweep across strings) and Drums (tap pads downwards). Notes always stay in the chosen scale. Record a loop with <kbd>L</kbd>.</p></article>
       <article><b>Masks &amp; 3D</b><p>In the Mask and 3D tabs. By default they appear when the frame passes over a face.</p></article>
       <article class="desk"><b>Keyboard</b><p><kbd>←</kbd> <kbd>→</kbd> effects · <kbd>P</kbd> photo · <kbd>R</kbd> record · <kbd>F</kbd> freeze · <kbd>D</kbd> tracking · <kbd>?</kbd> help</p></article>
       <article><b>Tracking tips</b><p>Good light, hands fully in view, about an arm's length from the camera. A plain background helps.</p></article>
@@ -156,9 +158,10 @@
   </aside>
 
   <section id="panel" class="glass">
+    <div id="modes" class="seg" role="radiogroup" aria-label="Mode"></div>
     <div id="tabs" class="row" role="tablist"></div>
     <div id="chips" class="row"></div>
-    <div class="shortcuts"><span><kbd>←</kbd> <kbd>→</kbd> effects</span><span><kbd>P</kbd> photo</span><span><kbd>R</kbd> record</span><span><kbd>F</kbd> freeze</span><span><kbd>D</kbd> tracking</span><span>👍 ✌️ 🖐 one-hand signs</span></div>
+    <div class="shortcuts"><span><kbd>←</kbd> <kbd>→</kbd> effects</span><span><kbd>P</kbd> photo</span><span><kbd>R</kbd> record</span><span><kbd>F</kbd> freeze</span><span><kbd>D</kbd> tracking</span><span><kbd>M</kbd> music mode</span><span class="fx-only">👍 ✌️ 🖐 one-hand signs</span><span class="music-only"><kbd>L</kbd> loop</span></div>
   </section>
 </main>
 

@@ -14,7 +14,8 @@ Owner: S2K7x (French-speaking; answer in French, keep **all code, UI text, comme
 ## Commands
 ```bash
 npm start    # python3 -m http.server 8000 → http://localhost:8000
-npm test     # node --test tests/*.test.mjs (56 tests, Node 20+)
+npm test     # node --test tests/*.test.mjs (65 tests, Node 20+)
+npm run check  # node --check on every module (also in CI)
 node tools/tune-filter.mjs                                   # One Euro tuning experiment
 /Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup --python tools/blender-reference-head.py -- <canonical_face_model.obj> assets/reference
 /Applications/Blender.app/Contents/MacOS/Blender --background assets/reference/tracked-reference-head.blend --python tools/blender-helmet.py -- assets/models
@@ -43,6 +44,7 @@ node tools/gen-face-mesh.mjs <canonical_face_model.obj> <vision_bundle.mjs> > sr
 | `temporal.js` | Temporal 3-frame vote for the segmentation mask |
 | `onboarding.js` | Tutorial state machine + contextual hints |
 | `errors.js` | Camera error mapping, constraint ladder, upload checks, retry/backoff, failure budget |
+| `music/*` | Music mode (separate from effects): `theory.js` scales, `instruments.js` gesture → notes, `looper.js`, `audio.js` Web Audio engine + MIDI, `pluck-worklet.js` Karplus-Strong, `controller.js` glue + overlay |
 | `device.js` | Device tier → detection size, model cadence, camera resolution |
 | `options.js` | UI options (values must match renderer/faces tables, checked by tests) |
 | `faces.js`, `geometry.js`, `capture.js`, `art.js`, `styles.css`, `mediapipe.js` (pins MediaPipe 1.1.1) | helpers |

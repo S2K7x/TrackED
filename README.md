@@ -40,7 +40,7 @@ Each step validates itself as soon as you succeed. You can skip it and replay it
 | Slow on an old phone | The app lowers its resolution and model cadence by itself. Avoid combining segmentation (Target), masks and 3D at the same time. |
 | Tracking points / FPS | Press <kbd>D</kbd> or the dots button: render fps, tracking fps, latency and resolution. |
 
-Run the unit tests with `npm test` (Node 20+).
+Run the unit tests with `npm test` and the syntax check of every module with `npm run check` (Node 20+).
 
 **Branches.** `main` always holds the latest working version. Every push to a work branch (`claude/**`) runs the tests in GitHub Actions and, if they pass, merges into `main` automatically (`.github/workflows/sync-main.yml`). The CI (`.github/workflows/ci.yml`) also runs the tests on `main` and on pull requests.
 
@@ -112,6 +112,11 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `tools/tune-filter.mjs` | One Euro tuning experiment (jitter vs lag) |
 | `src/errors.js` | Camera error mapping, constraint ladder, upload checks, retry with backoff, failure budget |
 | `src/onboarding.js` | Interactive tutorial state machine and contextual hints |
+| `src/music/theory.js` | Scales, note names, pitch mapping with snapping |
+| `src/music/instruments.js` | Gesture → note detection: pinch keys (hysteresis), string crossings, pad strikes, theremin |
+| `src/music/looper.js` | Free-length loop recorder |
+| `src/music/audio.js` / `pluck-worklet.js` | Web Audio engine (synth voices, drums, theremin, reverb, echo, limiter, MIDI out) and Karplus-Strong worklet |
+| `src/music/controller.js` | Music mode: hands → instruments → audio, and the on-screen instrument overlay |
 | `src/device.js` | Device profile: mobile/desktop, performance tier, detection size, model cadence |
 | `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
 | `src/geometry.js` | Builds the quad between the two hands |
@@ -152,6 +157,21 @@ Designed after hand-tracking onboarding guidance from [Meta](https://developers.
 - **Warm-up.** On mid and high-tier devices, the face model loads in the background during idle time, so the first mask, face filter or 3D accessory appears instantly.
 - **Offline and instant reloads.** A service worker (`sw.js`) caches the MediaPipe WASM, the models, three.js and the fonts (cache-first, since the URLs are versioned). The app's own files are network-first so updates arrive immediately, with an offline fallback.
 - The tracking HUD (D) shows render and tracking fps, latency, render scale and the face/segmentation cadence.
+
+## Music mode
+A separate mode (switch **Effects → Music** at the top of the panel, or press <kbd>M</kbd>) with its own tabs. The frame, masks and 3D are off, only the hand model runs (lowest latency), and your hands play an instrument. Every sound is synthesised in the browser: no samples, no recordings.
+
+| Instrument | How to play |
+|---|---|
+| **Theremin** | The right hand's height plays the notes, along on-screen "frets" (one line per scale note). The left hand's height sets the volume. Pitch can be locked to notes, soft-snapped or free-gliding. |
+| **Keys** | Pinch your thumb with a finger: 4 notes per hand, 8 in all, sustained while you hold the pinch. |
+| **Harp** | Sweep a fingertip across 10 vertical strings. Each crossing plucks a string, and speed sets the loudness. Plucks use Karplus-Strong physical modelling in an AudioWorklet. |
+| **Drums** | Six pads (kick, snare, hi-hat, clap, tom, crash). Strike them with a quick downward fingertip tap. Drums are synthesised from oscillators and noise. |
+
+- **Notes tab.** Scale (pentatonic by default, so you can't play a wrong note), key, range, and theremin snapping.
+- **Mix tab.** Reverb (dry, room, hall), echo, and **MIDI output** to a DAW or synth (Web MIDI: Chrome, Edge).
+- **Looper.** Record a phrase, then it loops while you jam on top (<kbd>L</kbd>).
+- **Recording.** Videos recorded in music mode include the sound.
 
 ## Robustness and error handling
 Every failure the app can hit in the real world has a defined behaviour, and each one was verified by injecting it in a browser:

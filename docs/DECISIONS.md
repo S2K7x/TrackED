@@ -19,6 +19,11 @@
 | Kitsune and Aero are mutually exclusive through a small `EXCLUSIVE` table in `options.js` | Owner wants them as two different looks; other masks and accessories stay combinable |
 | Guides are plain data in `guides.js`, rendered into one shared dialog | Easy to edit; tests check every customisable tab has one and that they quote real UI labels and upload limits |
 | One-hand signs from landmark geometry instead of MediaPipe Gesture Recognizer | Avoids a second model; signs are only read with one hand visible so they never clash with the frame |
+| **Music mode is a separate mode** (Effects ↔ Music switch) with its own tabs and settings | The owner didn't want the modes mixed. In music mode the frame, masks, 3D, pinch-to-switch and one-hand signs are off, and only the hand model runs (lowest latency) |
+| Music gestures handled in `onVision` (per tracking result), drawing and looper in the render loop | Notes fire as soon as landmarks arrive, and no gesture is missed when rendering is slow |
+| All sounds synthesised (oscillators, noise, Karplus-Strong worklet), no samples | Nothing to download or license; tiny; any pitch |
+| Scale locking by default (pentatonic) + visual guides | Free-air pitch is hard; this way beginners always sound good |
+| `npm run check` (`node --check` on every module) in CI before the tests | Catches syntax errors in browser-only files that unit tests never import |
 | `main` auto-updated by GitHub Actions from `claude/**` branches after tests pass | Owner wanted `main` to always be up to date automatically |
 
 ## Bugs found and fixed (worth remembering)
@@ -34,6 +39,8 @@
 | Name clash `maskTex` | Segmentation and face-mask textures shared a field | Renamed `faceMaskTex` |
 | Fit restore looked broken in a browser test | `accessory` is persisted as "model", so the test stopped waiting before the reloaded file was parsed | Tests wait for `three.userModel`, not the setting |
 | Kitsune ears drawn above the forehead were invisible | The face mesh stops at the hairline (UV oval top ≈ v 0.11); paint outside the oval is never sampled | Ears painted inside the oval; masks are previewed on the Blender reference head (its UVs match the app) |
+| Music gestures missed (1 note out of 3 pinches in a test) | Gesture detection ran at the render rate and sampled the hands only when a frame was drawn | Detection moved to `onVision` (every tracking result); test now gets 3/3 pinches, 6/6 drum strikes |
+| Looper replayed missed notes in a burst after a pause | The cursor advanced by at most one loop per call, so it fell behind real time | After a gap longer than the loop, jump to the present |
 | Instagram UI visible in test screenshots | The test webcam clip was a screen recording of a reel | Cropped clip. The app itself never adds such UI |
 
 ## Tuning results
