@@ -32,7 +32,24 @@ export class Capture {
   afterDraw() {
     if (!this.wantPhoto) return;
     this.wantPhoto = false;
-    this.canvas.toBlob((blob) => blob && save(blob, `tracked-${stamp()}.jpg`, this.notify), "image/jpeg", 0.92);
+    try {
+      this.canvas.toBlob((blob) => {
+        if (blob) save(blob, `tracked-${stamp()}.jpg`, this.notify).catch((err) => this.#fail("save the photo", err));
+        else this.notify("Couldn't take the photo. Please try again.");
+      }, "image/jpeg", 0.92);
+    } catch (err) {
+      this.#fail("take the photo", err);
+    }
+  }
+
+  #fail(what, err) {
+    console.error(err);
+    this.notify(`Couldn't ${what}. ${err?.name === "QuotaExceededError" ? "Your device storage is full." : "Please try again."}`);
+  }
+
+  /** Stops a running recording (page hidden, camera lost…); the clip is saved. */
+  stopRecording() {
+    if (this.recorder && this.recorder.state !== "inactive") this.recorder.stop();
   }
 
   /** @returns {boolean} recording state after the toggle */
@@ -46,8 +63,20 @@ export class Capture {
       return false;
     }
     const mimeType = pickMime();
-    const stream = this.canvas.captureStream(30);
-    const rec = new MediaRecorder(stream, { mimeType: mimeType || undefined, videoBitsPerSecond: 6_000_000 });
+    let stream, rec;
+    try {
+      stream = this.canvas.captureStream(30);
+      rec = new MediaRecorder(stream, { mimeType: mimeType || undefined, videoBitsPerSecond: 6_000_000 });
+    } catch (err) {
+      stream?.getTracks().forEach((t) => t.stop());
+      this.#fail("start recording", err);
+      return false;
+    }
+    rec.onerror = (e) => {
+      console.error("recorder:", e.error || e);
+      this.notify("Recording failed. What was captured so far will be saved.");
+      if (rec.state !== "inactive") rec.stop();
+    };
     const chunks = [];
     rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     rec.onstop = () => {
@@ -55,9 +84,17 @@ export class Capture {
       this.recorder = null;
       const type = rec.mimeType || mimeType || "video/webm";
       const ext = type.includes("mp4") ? "mp4" : "webm";
-      save(new Blob(chunks, { type }), `tracked-${stamp()}.${ext}`, this.notify);
+      const blob = new Blob(chunks, { type });
+      if (!blob.size) { this.notify("The recording is empty. Record for at least a second."); return; }
+      save(blob, `tracked-${stamp()}.${ext}`, this.notify).catch((err) => this.#fail("save the video", err));
     };
-    rec.start(1000);
+    try {
+      rec.start(1000);
+    } catch (err) {
+      stream.getTracks().forEach((t) => t.stop());
+      this.#fail("start recording", err);
+      return false;
+    }
     this.recorder = rec;
     return true;
   }

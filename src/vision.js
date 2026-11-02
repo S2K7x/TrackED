@@ -4,6 +4,7 @@
 import { FilesetResolver, HandLandmarker, FaceLandmarker, ImageSegmenter, MP_BASE } from "./mediapipe.js";
 import { summarizeFace } from "./faces.js";
 import { MaskStabilizer } from "./temporal.js";
+import { withRetry, isNetworkError } from "./errors.js";
 
 const MODELS = {
   hand: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
@@ -44,12 +45,14 @@ export class VisionPipeline {
     this.segTask = null;
     this.stillFace = null; // IMAGE-mode face landmarker for uploaded photos
     this.stabilizer = new MaskStabilizer();
+    this.onLoading = () => {};   // (count of models currently loading) => void
+    this.loading = 0;
   }
 
   async init(delegate = "GPU") {
     const inWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
     if (inWorker) installModuleFactoryCache();
-    this.fileset = await FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`, inWorker);
+    this.fileset = await withRetry(() => FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`, inWorker), { retryable: isNetworkError });
     this.delegate = delegate;
     this.hand = await this.#create(HandLandmarker, {
       baseOptions: { modelAssetPath: MODELS.hand },
@@ -61,18 +64,32 @@ export class VisionPipeline {
     });
   }
 
-  /** Creates a task on the preferred delegate, falling back to CPU. */
+  /**
+   * Creates a task on the preferred delegate, falling back to CPU. Model
+   * downloads are retried with exponential backoff on network errors.
+   */
   async #create(Task, options) {
+    // creating a task compiles WASM / uploads weights and can block this thread
+    // for seconds on slow devices: let the caller know it's loading, not stalled
+    this.onLoading(++this.loading);
     try {
-      return await Task.createFromOptions(this.fileset, {
-        ...options, baseOptions: { ...options.baseOptions, delegate: this.delegate },
-      });
+      return await this.#createTask(Task, options);
+    } finally {
+      this.onLoading(--this.loading);
+    }
+  }
+
+  async #createTask(Task, options) {
+    const make = (delegate) => withRetry(
+      () => Task.createFromOptions(this.fileset, { ...options, baseOptions: { ...options.baseOptions, delegate } }),
+      { attempts: 3, baseMs: 1000, retryable: isNetworkError },
+    );
+    try {
+      return await make(this.delegate);
     } catch (err) {
-      if (this.delegate === "CPU") throw err;
+      if (this.delegate === "CPU" || isNetworkError(err)) throw err;
       console.warn(`${Task.name}: GPU delegate unavailable, using CPU`, err);
-      return Task.createFromOptions(this.fileset, {
-        ...options, baseOptions: { ...options.baseOptions, delegate: "CPU" },
-      });
+      return make("CPU");
     }
   }
 

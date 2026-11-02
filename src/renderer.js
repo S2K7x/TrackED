@@ -473,6 +473,7 @@ export class Renderer {
     });
     if (!gl) throw new Error("WebGL2 is not supported by this browser");
     this.gl = gl;
+    this.maxTexture = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096;
     this.canvas = canvas;
 
     const prog = link(gl, VERT, FRAG);

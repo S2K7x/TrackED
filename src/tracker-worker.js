@@ -3,6 +3,13 @@
 import { VisionPipeline } from "./vision.js";
 
 const vision = new VisionPipeline();
+vision.onLoading = (count) => self.postMessage({ type: "loading", count });
+
+// surface async failures instead of dying silently (the main thread decides how to recover)
+self.addEventListener("unhandledrejection", (e) => {
+  e.preventDefault();
+  self.postMessage({ type: "error", message: `worker: ${e.reason?.message || e.reason}` });
+});
 
 self.onmessage = async ({ data }) => {
   if (data.type === "init") {

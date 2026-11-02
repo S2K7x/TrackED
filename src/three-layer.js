@@ -86,6 +86,9 @@ export class ThreeLayer {
     for (const head of this.heads) {
       if (head.userData.acc) { head.remove(head.userData.acc); head.userData.acc = null; }
     }
+    // free GPU memory of the previous accessory (clones share geometry / materials, so once is enough);
+    // a user model's originals stay alive in this.userModel and are reused by fitUserModel
+    if (this.template && this.template !== obj) disposeTree(this.template, this.userModel);
     this.template = obj;
     if (!obj) return;
     this.heads.forEach((head, i) => {
@@ -141,6 +144,19 @@ export class ThreeLayer {
     const p = new THREE.Vector3(x, y, z).applyMatrix4(m).project(this.camera);
     return { x: (p.x + 1) / 2, y: (1 - p.y) / 2 };
   }
+}
+
+function disposeTree(root, keep) {
+  const kept = new Set();
+  keep?.traverse((o) => { if (o.geometry) kept.add(o.geometry); for (const m of [].concat(o.material || [])) kept.add(m); });
+  root.traverse((o) => {
+    if (o.geometry && !kept.has(o.geometry)) o.geometry.dispose();
+    for (const m of [].concat(o.material || [])) {
+      if (kept.has(m)) continue;
+      for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
+      m.dispose();
+    }
+  });
 }
 
 function easeOutBack(t) {

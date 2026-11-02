@@ -68,6 +68,7 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `sw.js` | Service worker: model / library caching, offline |
 | `src/temporal.js` | Temporal stabilisation of the segmentation mask |
 | `tools/tune-filter.mjs` | One Euro tuning experiment (jitter vs lag) |
+| `src/errors.js` | Camera error mapping, constraint ladder, upload checks, retry with backoff, failure budget |
 | `src/device.js` | Device profile: mobile/desktop, performance tier, detection size, model cadence |
 | `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
 | `src/geometry.js` | Builds the quad between the two hands |
@@ -98,6 +99,25 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 - **Warm-up.** On mid and high-tier devices, the face model loads in the background during idle time, so the first mask, face filter or 3D accessory appears instantly.
 - **Offline and instant reloads.** A service worker (`sw.js`) caches the MediaPipe WASM, the models, three.js and the fonts (cache-first, since the URLs are versioned). The app's own files are network-first so updates arrive immediately, with an offline fallback.
 - The tracking HUD (D) shows render and tracking fps, latency, render scale and the face/segmentation cadence.
+
+## Robustness and error handling
+Every failure the app can hit in the real world has a defined behaviour, and each one was verified by injecting it in a browser:
+
+| Failure | What happens |
+|---|---|
+| Camera blocked / missing / busy / unsupported | A clear panel says what happened and what to do, with a "Try again" button. Standard and legacy Chrome error names are both recognised ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia), [common errors](https://blog.addpipe.com/common-getusermedia-errors/)). |
+| Camera can't satisfy the requested mode | Automatic retry down a ladder: ideal resolution, then 640×480, then any camera with the right facing, then any camera. |
+| Camera unplugged or taken mid-session | The track's `ended` event shows the panel, and Retry reconnects without reloading. |
+| Page not secure (http) | Explained upfront (the camera requires https or localhost). |
+| WebGL context lost (GPU reset, driver update, memory pressure) | `preventDefault()` on `webglcontextlost`, rendering pauses, then every GPU resource is rebuilt on `webglcontextrestored`: shaders, textures, your image, masks, the 3D layer and your 3D model ([Khronos guidance](https://wikis.khronos.org/webgl/HandlingContextLost)). |
+| Tracking worker crashes or stalls | A watchdog notices a frame that never comes back and restarts the worker. After 2 restarts, tracking moves to the main thread. Model loading is reported by the worker, so a slow WASM compile is never mistaken for a stall. |
+| Model download fails | Retried with exponential backoff (1 s, 2 s) on network errors. The GPU delegate falls back to CPU on other errors. |
+| MediaPipe timestamps | Always strictly increasing, as VIDEO mode requires. |
+| Bad uploads | Type and size are checked before decoding (images up to 25 MB, `.glb` up to 60 MB). Corrupt files and multi-file `.gltf` get a specific message, and huge images are downscaled to the GPU's max texture size. |
+| Photo / recording failures | `toBlob` / `MediaRecorder` errors, empty clips and storage-full errors are reported. A recording in progress is saved when the page is hidden. |
+| A frame throws | Logged and skipped. If 60 frames in a row fail, the loop stops and the panel offers a reload instead of spinning. Uncaught errors are logged and shown at most once every 5 s. |
+| Older Safari without `createImageBitmap` resize | Frames are downscaled through an `OffscreenCanvas` instead. |
+| Switching 3D accessories | The previous accessory's geometries, materials and textures are disposed, so there is no GPU memory leak. |
 
 ## Display modes for masks and 3D
 | Mode | Behaviour |

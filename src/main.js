@@ -9,6 +9,7 @@ import { Capture } from "./capture.js";
 import { drawSpark, drawWaves } from "./art.js";
 import { deviceProfile } from "./device.js";
 import { classifySign, SignHold } from "./gestures.js";
+import { describeCameraError, constraintLadder, checkUpload, fitTextureSize, FailureBudget } from "./errors.js";
 
 const $ = (s) => document.querySelector(s);
 const video = $("#cam");
@@ -224,7 +225,8 @@ async function onMaskImage(e, kind) {
   const f = e.target.files[0];
   e.target.value = "";
   if (!f || !renderer) return;
-  const image = await createImageBitmap(f, { imageOrientation: "from-image", premultiplyAlpha: "none" });
+  const image = await decodeImage(f, { premultiplyAlpha: "none" });
+  if (!image) return;
   if (kind === "swap") {
     flash("Finding the face in your photo…");
     let uv = null;
@@ -276,20 +278,27 @@ async function applyAccessory() {
   }
 }
 
+let lastModel = null; // kept to rebuild the 3D layer after a GPU reset
 async function onModelFile(e) {
   const f = e.target.files[0];
   e.target.value = "";
   if (!f || !renderer) return;
+  const problem = checkUpload(f, "model");
+  if (problem) { flash(problem); return; }
   const t = await ensureThree();
   if (!t) return;
   flash("Loading your model…");
   try {
-    await t.loadModel(await f.arrayBuffer(), settings.anchor, Number(settings.size));
+    const buf = await f.arrayBuffer();
+    await t.loadModel(buf.slice(0), settings.anchor, Number(settings.size));
+    lastModel = buf;
     set("accessory", "model");
     flash("Model ready. Pick where it sits below.");
   } catch (err) {
     console.error(err);
-    flash("Couldn't read that model. Use a single .glb file.");
+    flash(f.name.toLowerCase().endsWith(".gltf")
+      ? "This .gltf needs separate files. Export a single .glb instead."
+      : "Couldn't read that model. Try exporting it again as .glb.");
   }
 }
 
@@ -317,12 +326,38 @@ class MeshFilter {
 
 async function onImagePicked(e) {
   const f = e.target.files[0];
+  e.target.value = "";
   if (!f || !renderer) return;
-  // createImageBitmap decodes off the main thread and applies EXIF orientation
-  const bmp = await createImageBitmap(f, { imageOrientation: "from-image" });
+  const bmp = await decodeImage(f);
+  if (!bmp) return;
+  state.overlayImage?.close?.();
+  state.overlayImage = bmp;       // kept (not closed) to re-upload after a GPU reset
   renderer.setOverlay(bmp);
-  bmp.close();
   set("effect", "image");
+}
+
+/**
+ * Validates and decodes a user image off the main thread (EXIF orientation
+ * applied), downscaled to the GPU's max texture size. Returns null + a toast on failure.
+ */
+async function decodeImage(file, opts = {}) {
+  const problem = checkUpload(file, "image");
+  if (problem) { flash(problem); return null; }
+  try {
+    let bmp = await createImageBitmap(file, { imageOrientation: "from-image", ...opts });
+    const max = renderer?.maxTexture || 4096;
+    const fit = fitTextureSize(bmp.width, bmp.height, max);
+    if (fit.scaled) {
+      const small = await createImageBitmap(bmp, { resizeWidth: fit.width, resizeHeight: fit.height, resizeQuality: "high", ...opts });
+      bmp.close();
+      bmp = small;
+    }
+    return bmp;
+  } catch (err) {
+    console.warn("image decode failed:", err);
+    flash("Couldn't open that image. Try a PNG or JPG.");
+    return null;
+  }
 }
 
 $("#debug").addEventListener("click", (e) => {
@@ -491,26 +526,33 @@ async function start() {
   $("#start").hidden = true;
   $("#app").hidden = false;
   fitStage();
+  // the camera only exists in secure contexts (https / localhost)
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    showError({ title: "The camera needs a secure page", hint: "Open TrackED over https:// (or localhost) in a recent browser.", retry: false });
+    return;
+  }
   try {
     renderer = new Renderer(canvas);
   } catch (err) {
-    showStatus(err.message);
+    showError({ title: "Your browser can't run the effects", hint: `${err.message}. Try a recent Chrome, Safari, Edge or Firefox.`, retry: false });
     return;
   }
+  watchContextLoss();
   capture = new Capture(canvas, (msg) => flash(msg));
   applyMask();
   applyAccessory();
   tracker = new HandTracker({ detectWidth: device.detectWidth });
-  keepAwake();
   tracker.onResult = onVision;
+  tracker.onStatus = (msg) => (msg ? flash(msg) : null);
+  keepAwake();
   showStatus(MSG.loading);
-  try {
-    const [mode] = await Promise.all([tracker.init(), startCamera()]); // in parallel
-    state.trackerMode = mode;
-    $("#hud-mode").textContent = mode === "worker" ? "Web Worker" : "Main thread";
-  } catch (err) {
-    showStatus("Error: " + (err?.message || err));
-    console.error(err);
+  // camera and model load in parallel; each failure gets its own message
+  const [cam, trk] = await Promise.allSettled([startCamera(), tracker.init()]);
+  if (trk.status === "fulfilled") state.trackerMode = trk.value;
+  if (cam.status === "rejected") return; // startCamera showed the error panel; its retry restarts the loop
+  if (trk.status === "rejected") {
+    console.error(trk.reason);
+    showError({ title: "Couldn't load hand tracking", hint: "Check your internet connection (the models download on first use), then try again.", retry: true, onRetry: () => location.reload() });
     return;
   }
   showStatus(MSG.showBoth);
@@ -519,23 +561,104 @@ async function start() {
   if (device.tier !== "low") (window.requestIdleCallback || setTimeout)(() => tracker.warm(["face"]), { timeout: 4000 });
 }
 
+/**
+ * Starts the camera, stepping down a ladder of constraints when the device
+ * can't satisfy them (OverconstrainedError, busy camera, no rear camera…).
+ * Shows the error panel and rethrows when it finally fails.
+ */
 async function startCamera() {
   video.srcObject?.getTracks().forEach((t) => t.stop());
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    // portrait screens (phones) ask for a portrait stream so the camera fills the screen
-    video: (() => {
-      const short = device.cameraHeight, long = Math.round(short * 16 / 9);
-      const portrait = innerHeight > innerWidth;
-      return { facingMode: state.facing, width: { ideal: portrait ? short : long }, height: { ideal: portrait ? long : short }, frameRate: { ideal: 30 } };
-    })(),
+  // portrait screens (phones) ask for a portrait stream so the camera fills the screen
+  const short = device.cameraHeight, long = Math.round((short * 16) / 9);
+  const portrait = innerHeight > innerWidth;
+  const ladder = constraintLadder({ facing: state.facing, width: portrait ? short : long, height: portrait ? long : short });
+  let stream, lastErr;
+  for (const video of ladder) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
+      break;
+    } catch (err) {
+      lastErr = err;
+      if (!describeCameraError(err).relax) break;   // e.g. permission denied: simpler constraints won't help
+    }
+  }
+  if (!stream) {
+    const d = describeCameraError(lastErr);
+    showError({ ...d, onRetry: retryCamera });
+    throw lastErr;
+  }
+  const track = stream.getVideoTracks()[0];
+  // camera unplugged, taken by another app, or permission revoked mid-session
+  track?.addEventListener("ended", () => {
+    if (video.srcObject !== stream) return;
+    showError({ title: "The camera stopped", hint: "It was disconnected or another app took it.", retry: true, onRetry: retryCamera });
   });
   video.srcObject = stream;
-  await video.play();
+  try {
+    await video.play();
+  } catch (err) {
+    // autoplay policies can block play() until a user gesture
+    if (err?.name === "NotAllowedError") {
+      showError({ title: "Tap to start the video", hint: "", retry: true, retryLabel: "Start", onRetry: () => video.play().then(hideError) });
+    } else throw err;
+  }
   fitStage();
   quadFilter.reset();
   state.quad = null;
   state.faces = [];
+  return stream;
+}
+
+/** Retry button for camera errors: restart the camera and (re)start the frame loop. */
+async function retryCamera() {
+  try {
+    await startCamera();
+    hideError();
+    if (state.trackerMode) {
+      showStatus(MSG.showBoth);
+      if (!scheduled) scheduleFrame();
+    }
+  } catch { /* startCamera showed the error again */ }
+}
+
+// ---------------- Error panel ----------------
+function showError({ title, hint = "", retry = true, retryLabel = "Try again", onRetry = () => location.reload() }) {
+  const panel = $("#error");
+  panel.querySelector("h2").textContent = title;
+  panel.querySelector("p").textContent = hint;
+  const btn = panel.querySelector("button");
+  btn.hidden = !retry;
+  btn.textContent = retryLabel;
+  btn.onclick = () => { btn.disabled = true; Promise.resolve(onRetry()).finally(() => { btn.disabled = false; }); };
+  panel.hidden = false;
+  showStatus("");
+}
+function hideError() { $("#error").hidden = true; }
+
+// ---------------- WebGL context loss (GPU reset, driver update, too many tabs…) ----------------
+// Per the Khronos guidance: preventDefault() on "lost" to be allowed a restore,
+// pause rendering, then rebuild every GPU resource on "restored".
+let glLost = false;
+function watchContextLoss() {
+  canvas.addEventListener("webglcontextlost", (e) => {
+    e.preventDefault();
+    glLost = true;
+    showStatus("Graphics were reset, recovering…");
+  });
+  canvas.addEventListener("webglcontextrestored", async () => {
+    try {
+      renderer = new Renderer(canvas);
+      if (state.overlayImage) renderer.setOverlay(state.overlayImage);
+      applyMask();
+      $("#freeze").classList.remove("on");
+      if (three) { const buf = lastModel; three = null; threeLoading = null; if (settings.accessory !== "none") await applyAccessory(); if (buf && settings.accessory === "model") await (await ensureThree())?.loadModel(buf.slice(0), settings.anchor, Number(settings.size)); }
+      glLost = false;
+      showStatus("");
+    } catch (err) {
+      console.error(err);
+      showError({ title: "Graphics couldn't recover", hint: "Reload the page to continue." });
+    }
+  });
 }
 
 function showStatus(msg) {
@@ -557,17 +680,36 @@ function flash(msg) {
 const hasRVFC = "requestVideoFrameCallback" in HTMLVideoElement.prototype;
 let lastVideoTime = -1;
 
+let scheduled = false;
 function scheduleFrame() {
+  scheduled = true;
   if (hasRVFC) video.requestVideoFrameCallback(onFrame);
   else requestAnimationFrame(onFrame);
 }
 
+// One failing frame must not kill the loop, but a loop failing on every frame
+// must stop spinning and tell the user.
+const frameFailures = new FailureBudget(60);
 function onFrame() {
   scheduleFrame();
+  if (glLost) return;
   if (!hasRVFC) {
     if (video.currentTime === lastVideoTime) return;
     lastVideoTime = video.currentTime;
   }
+  try {
+    renderFrame();
+    frameFailures.ok();
+  } catch (err) {
+    console.error("frame failed:", err);
+    if (frameFailures.fail()) {
+      glLost = true; // stop rendering
+      showError({ title: "Something went wrong", hint: String(err?.message || err), retryLabel: "Reload" });
+    }
+  }
+}
+
+function renderFrame() {
   const t = performance.now();
   // power saving: with no hand in sight for 3 s, track every other frame (a hand
   // entering the picture is still picked up within ~70 ms)
@@ -805,9 +947,24 @@ function countFps(t) {
 // Pause camera when the page is hidden (saves battery), resume when visible.
 document.addEventListener("visibilitychange", () => {
   if (!video.srcObject) return;
-  if (document.hidden) video.pause();
+  if (document.hidden) {
+    video.pause();
+    if (capture?.recorder) toggleRecording(); // save the clip instead of recording a frozen frame
+  }
   else { video.play().catch(() => {}); keepAwake(); }
 });
+
+// Last-resort error reporting: log everything, tell the user at most every 5 s.
+let lastErrorToast = 0;
+function reportGlobal(err) {
+  console.error(err);
+  const now = performance.now();
+  if (now - lastErrorToast < 5000 || !$("#app") || $("#app").hidden) return;
+  lastErrorToast = now;
+  flash("Something went wrong, but TrackED keeps running.");
+}
+addEventListener("error", (e) => reportGlobal(e.error || e.message));
+addEventListener("unhandledrejection", (e) => reportGlobal(e.reason));
 
 // Cache models / WASM / libraries for instant second launches and offline use.
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
@@ -815,4 +972,4 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || location.
 }
 
 // test hook (used by automated browser tests only)
-window.__tracked = { state, settings, set, onVision: (...a) => onVision(...a), get renderer() { return renderer; }, get three() { return three; } };
+window.__tracked = { state, settings, set, onVision: (...a) => onVision(...a), get renderer() { return renderer; }, get three() { return three; }, get tracker() { return tracker; } };
