@@ -1,4 +1,4 @@
-// Hand tracking front-end. Prefers a module Web Worker (detection off the main
+// Vision front-end (hands, faces, segmentation). Prefers a module Web Worker (detection off the main
 // thread); falls back to the main thread if workers/OffscreenCanvas don't work.
 // Back-pressure: at most one frame is in flight; frames arriving meanwhile are
 // dropped instead of queued, so latency never piles up.
@@ -51,25 +51,26 @@ export class HandTracker {
   }
 
   async #initMain() {
-    const [{ FilesetResolver, HandLandmarker }, { createLandmarker }] = await Promise.all([
-      import("./mediapipe.js"),
-      import("./landmarker.js"),
-    ]);
-    this.landmarker = await createLandmarker(FilesetResolver, HandLandmarker, "GPU");
+    const { VisionPipeline } = await import("./vision.js");
+    this.vision = new VisionPipeline();
+    await this.vision.init("GPU");
   }
 
   #onWorkerMessage(data) {
     if (data.type === "result") {
       this.busy = false;
-      this.onResult(data.hands, data.timestamp);
+      this.onResult(data.result, data.timestamp);
     } else if (data.type === "error") {
       this.busy = false;
       console.warn("tracker:", data.message);
     }
   }
 
-  /** Submits a video frame; silently drops it if the previous one is still being processed. */
-  async submit(video, timestamp) {
+  /**
+   * Submits a video frame; silently drops it if the previous one is still being processed.
+   * @param {{face?: boolean, seg?: boolean}} want  extra models to run on this frame
+   */
+  async submit(video, timestamp, want = {}) {
     if (this.busy || !video.videoWidth) return;
     this.busy = true;
     if (this.mode === "worker") {
@@ -80,15 +81,14 @@ export class HandTracker {
           resizeHeight: Math.round(video.videoHeight * scale),
           resizeQuality: "low",
         });
-        this.worker.postMessage({ type: "frame", bitmap, timestamp }, [bitmap]);
+        this.worker.postMessage({ type: "frame", bitmap, timestamp, want }, [bitmap]);
       } catch (err) {
         this.busy = false;
         console.warn("frame capture failed:", err);
       }
     } else {
       try {
-        const res = this.landmarker.detectForVideo(video, timestamp);
-        this.onResult(res.landmarks || [], timestamp);
+        this.onResult(this.vision.process(video, timestamp, want), timestamp);
       } finally {
         this.busy = false;
       }

@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#000000" />
 <title>TrackED</title>
-<!-- warm up connections to the CDNs used for the library, the WASM runtime and the model -->
+<!-- warm up connections to the CDNs used for the library, the WASM runtime and the models -->
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link rel="preconnect" href="https://storage.googleapis.com" crossorigin />
 <link rel="modulepreload" href="src/main.js" />
 <style>
-  :root { --bg:#000; --fg:#fff; --accent:#ff2d55; }
+  :root { --bg:#000; --fg:#fff; --accent:#ff2d55; --chip:rgba(0,0,0,.45); --line:rgba(255,255,255,.35); }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
     font-family:system-ui, -apple-system, sans-serif; overflow:hidden; overscroll-behavior:none; }
@@ -18,28 +18,44 @@
   #out { object-fit:contain; touch-action:none; }
   #debug-layer { pointer-events:none; }
   video { position:fixed; width:1px; height:1px; opacity:0; pointer-events:none; }
-  #ui { position:fixed; left:0; right:0; bottom:0; padding:12px 16px calc(12px + env(safe-area-inset-bottom));
-    display:flex; gap:8px; overflow-x:auto; scrollbar-width:none;
-    background:linear-gradient(transparent, rgba(0,0,0,.75)); }
-  #ui::-webkit-scrollbar { display:none; }
-  #ui button, #ui label { flex:0 0 auto; border:1px solid rgba(255,255,255,.4); background:rgba(0,0,0,.45);
-    color:#fff; padding:10px 14px; border-radius:999px; font:inherit; font-size:14px; cursor:pointer; }
-  #ui button.on { background:var(--accent); border-color:var(--accent); }
-  #ui input[type=file] { display:none; }
-  #status { position:fixed; top:calc(12px + env(safe-area-inset-top)); left:16px; right:16px; text-align:center;
+  button, label.chip { font:inherit; color:#fff; cursor:pointer; }
+
+  #top { position:fixed; top:calc(10px + env(safe-area-inset-top)); right:16px; display:flex; gap:8px; }
+  #top button { border:1px solid var(--line); background:var(--chip); padding:8px 12px; border-radius:999px; font-size:13px; }
+  #top button.on { background:var(--accent); border-color:var(--accent); }
+  #top button.rec { background:#e00; border-color:#e00; animation:pulse 1s infinite alternate; }
+  @keyframes pulse { to { opacity:.6; } }
+
+  #panel { position:fixed; left:0; right:0; bottom:0; padding:8px 0 calc(10px + env(safe-area-inset-bottom));
+    background:linear-gradient(transparent, rgba(0,0,0,.8) 30%); }
+  .row { display:flex; gap:8px; overflow-x:auto; padding:4px 16px; scrollbar-width:none; align-items:center; }
+  .row::-webkit-scrollbar { display:none; }
+  #tabs button { flex:0 0 auto; border:0; background:none; padding:6px 8px; font-size:14px; font-weight:600; opacity:.6;
+    border-bottom:2px solid transparent; }
+  #tabs button.on { opacity:1; border-bottom-color:var(--accent); }
+  .chip { flex:0 0 auto; border:1px solid var(--line); background:var(--chip); padding:9px 13px; border-radius:999px;
+    font-size:14px; white-space:nowrap; }
+  .chip.on { background:var(--accent); border-color:var(--accent); }
+  .chip input { display:none; }
+  .swatch { flex:0 0 auto; width:34px; height:34px; border-radius:50%; background:var(--c); border:2px solid rgba(255,255,255,.5); padding:0; }
+  .swatch.on { border:3px solid #fff; box-shadow:0 0 0 2px var(--c); }
+  .sep { flex:0 0 1px; height:24px; background:var(--line); margin:0 4px; }
+
+  #status { position:fixed; top:calc(54px + env(safe-area-inset-top)); left:16px; right:16px; text-align:center;
     font-size:14px; text-shadow:0 1px 3px #000; pointer-events:none; }
+  #toast { position:fixed; top:40%; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.75); padding:10px 16px;
+    border-radius:12px; font-size:14px; pointer-events:none; max-width:calc(100% - 32px); text-align:center; }
   #start { position:fixed; inset:0; z-index:10; display:flex; flex-direction:column; gap:16px; align-items:center;
     justify-content:center; padding:16px; text-align:center; background:#000; }
-  #start p { max-width:340px; opacity:.8; margin:0; }
-  #start button { font:inherit; font-size:18px; padding:14px 28px; border-radius:999px; border:0;
-    background:var(--accent); color:#fff; cursor:pointer; }
+  #start p { max-width:360px; opacity:.8; margin:0; line-height:1.4; }
+  #start button { font-size:18px; padding:14px 28px; border-radius:999px; border:0; background:var(--accent); }
 </style>
 </head>
 <body>
 <div id="start">
   <h1 style="margin:0">TrackED</h1>
   <p>Fais un « L » avec le pouce et l'index de chaque main, face caméra :
-  un cadre filtré apparaît entre tes mains. Glisse à gauche/droite pour changer d'effet.</p>
+  un cadre magique apparaît entre tes mains. Tout ce qui passe dedans — ton visage, tes amis, le décor — est transformé.</p>
   <button id="go">Activer la caméra</button>
 </div>
 
@@ -47,18 +63,18 @@
 <canvas id="debug-layer" hidden></canvas>
 <video id="cam" playsinline muted autoplay></video>
 <div id="status"></div>
+<div id="toast" hidden></div>
 
-<div id="ui">
-  <button data-fx="neon" class="on">Néon rouge</button>
-  <button data-fx="violet">Violet</button>
-  <button data-fx="jaune">Jaune</button>
-  <button data-fx="invert">Négatif</button>
-  <button data-fx="bw">N&amp;B</button>
-  <button data-fx="glitch">Glitch</button>
-  <button data-fx="image">Image</button>
-  <label>📷 Choisir image<input id="file" type="file" accept="image/*"></label>
-  <button id="flip">↺ Caméra</button>
+<div id="top">
+  <button id="photo">📸 Photo</button>
+  <button id="rec">⏺ Vidéo</button>
+  <button id="flip" aria-label="Changer de caméra">↺</button>
   <button id="debug">Points</button>
+</div>
+
+<div id="panel">
+  <div id="tabs" class="row"></div>
+  <div id="chips" class="row"></div>
 </div>
 
 <script type="module" src="src/main.js"></script>
