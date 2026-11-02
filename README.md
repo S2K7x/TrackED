@@ -44,6 +44,13 @@ Run the unit tests with `npm test` (Node 20+).
 
 **Branches.** `main` always holds the latest working version. Every push to a work branch (`claude/**`) runs the tests in GitHub Actions and, if they pass, merges into `main` automatically (`.github/workflows/sync-main.yml`). The CI (`.github/workflows/ci.yml`) also runs the tests on `main` and on pull requests.
 
+## Docs
+- [`docs/RESEARCH.md`](docs/RESEARCH.md): research log with sources (ML papers, techniques, UX)
+- [`docs/DECISIONS.md`](docs/DECISIONS.md): technical decisions, bugs found, tuning results
+- [`docs/ROADMAP.md`](docs/ROADMAP.md): next steps and what to verify on real devices
+- [`docs/TESTING.md`](docs/TESTING.md): unit tests, headless browser with a fake camera, failure injection
+- [`CLAUDE.md`](CLAUDE.md): context loaded automatically by Claude Code sessions
+
 ## Features
 The bottom sheet has five tabs:
 
