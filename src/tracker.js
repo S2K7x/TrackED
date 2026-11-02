@@ -3,10 +3,10 @@
 // Back-pressure: at most one frame is in flight; frames arriving meanwhile are
 // dropped instead of queued, so latency never piles up.
 
-const DETECT_WIDTH = 480; // the model runs at ~224px internally; no need to ship 720p frames
-
 export class HandTracker {
-  constructor() {
+  /** @param {{detectWidth?: number}} opts  frames are downscaled to this width before detection */
+  constructor({ detectWidth = 480 } = {}) {
+    this.detectWidth = detectWidth;
     this.busy = false;
     this.onResult = () => {};
     this.mode = null;
@@ -75,7 +75,7 @@ export class HandTracker {
     this.busy = true;
     if (this.mode === "worker") {
       try {
-        const scale = Math.min(1, DETECT_WIDTH / video.videoWidth);
+        const scale = Math.min(1, this.detectWidth / Math.max(video.videoWidth, video.videoHeight));
         const bitmap = await createImageBitmap(video, {
           resizeWidth: Math.round(video.videoWidth * scale),
           resizeHeight: Math.round(video.videoHeight * scale),

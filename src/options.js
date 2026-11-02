@@ -55,6 +55,15 @@ export const OPTIONS = {
     { value: "thick", label: "Thick edge" },
     { value: "none", label: "No edge" },
   ],
+  timer: [
+    { value: "0", label: "No timer" },
+    { value: "3", label: "3 s" },
+    { value: "10", label: "10 s" },
+  ],
+  gesture: [
+    { value: "on", label: "Pinch to switch effect" },
+    { value: "off", label: "Off" },
+  ],
   color: [
     { value: "#ff2d55", label: "Red" },
     { value: "#d4ff3a", label: "Lime" },
@@ -74,6 +83,7 @@ export const TABS = [
   { id: "target", label: "Target", groups: ["target"] },
   { id: "shape", label: "Shape", groups: ["shape"] },
   { id: "color", label: "Color", groups: ["color", "border"] },
+  { id: "more", label: "More", groups: ["timer", "gesture"] },
 ];
 
 export const DEFAULTS = {
@@ -84,6 +94,8 @@ export const DEFAULTS = {
   shape: "rect",
   border: "neon",
   color: "#ff2d55",
+  timer: "3",
+  gesture: "on",
 };
 
 /** "#ff2d55" → [1, 0.176, 0.333] */

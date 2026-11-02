@@ -4,6 +4,11 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#eeeeea" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icon.svg" />
 <meta name="description" content="Frame the world with your fingers: real-time hand-tracked camera effects in the browser." />
 <title>TrackED</title>
 <!-- warm up connections to the CDNs used for fonts, the library, the WASM runtime and the models -->
@@ -62,16 +67,19 @@
   </header>
 
   <nav class="tools">
-    <button id="photo" class="icon glass" aria-label="Take photo" title="Photo">
+    <button id="photo" class="icon glass" aria-label="Take photo" title="Photo (P)">
       <svg viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
     </button>
-    <button id="rec" class="icon glass" aria-label="Record video" title="Record">
+    <button id="rec" class="icon glass" aria-label="Record video" title="Record (R)">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle class="fill" cx="12" cy="12" r="4"/></svg>
+    </button>
+    <button id="freeze" class="icon glass" aria-label="Freeze the frame" title="Freeze (F)">
+      <svg viewBox="0 0 24 24"><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M9.5 4.5L12 7l2.5-2.5M9.5 19.5L12 17l2.5 2.5"/></svg>
     </button>
     <button id="flip" class="icon glass" aria-label="Switch camera" title="Switch camera">
       <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>
     </button>
-    <button id="debug" class="icon glass" aria-label="Show tracking points" title="Tracking points">
+    <button id="debug" class="icon glass" aria-label="Show tracking points" title="Tracking points (D)">
       <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="1.5"/><circle cx="18" cy="6" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="6" cy="18" r="1.5"/><circle cx="18" cy="18" r="1.5"/></svg>
     </button>
   </nav>
@@ -79,6 +87,8 @@
   <div id="status" class="pill glass"><i class="dot"></i><span></span></div>
   <div id="rec-pill" class="pill glass" hidden><i class="dot red"></i><span>00:00</span></div>
   <div id="toast" class="pill glass" hidden></div>
+  <div id="countdown" hidden></div>
+  <div id="flash" hidden></div>
 
   <aside id="hud" class="glass" hidden>
     <div><b id="hud-fps">0</b><span>Render fps</span></div>
@@ -90,6 +100,7 @@
   <section id="panel" class="glass">
     <div id="tabs" class="row" role="tablist"></div>
     <div id="chips" class="row"></div>
+    <div class="shortcuts"><span><kbd>←</kbd> <kbd>→</kbd> effects</span><span><kbd>P</kbd> photo</span><span><kbd>R</kbd> record</span><span><kbd>F</kbd> freeze</span><span><kbd>D</kbd> tracking</span></div>
   </section>
 </main>
 

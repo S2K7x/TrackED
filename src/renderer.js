@@ -37,6 +37,8 @@ const float PI = 3.14159265;
 uniform sampler2D uVideo;
 uniform sampler2D uOverlay;
 uniform sampler2D uMask;        // R8 category mask (selfie_multiclass)
+uniform sampler2D uFrozen;      // snapshot shown inside the frame while frozen
+uniform bool  uFreeze;
 uniform vec2  uQuad[4];
 uniform float uAlpha;           // 0 = no frame
 uniform int   uEffect;
@@ -60,7 +62,8 @@ float cross2(vec2 a, vec2 b) { return a.x * b.y - a.y * b.x; }
 float dot2(vec2 v) { return dot(v, v); }
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 vec2 src(vec2 uv) { return vec2(uMirror ? 1.0 - uv.x : uv.x, uv.y); }   // display → camera texture
-vec3 cam(vec2 uv) { return texture(uVideo, src(uv)).rgb; }
+bool gInside = false;            // true while shading pixels inside the frame
+vec3 cam(vec2 uv) { return (uFreeze && gInside) ? texture(uFrozen, src(uv)).rgb : texture(uVideo, src(uv)).rgb; }
 vec3 hue(float h) { return clamp(abs(fract(h + vec3(0.0, 2.0, 1.0) / 3.0) * 6.0 - 3.0) - 1.0, 0.0, 1.0); }
 
 // Inverse bilinear interpolation (Inigo Quilez). Corners a,b,c,d map to
@@ -303,6 +306,8 @@ void main() {
   }
 
   vec2 f = clamp(fuv, 0.0, 1.0);
+  gInside = true;
+  base = mix(base, cam(vUv), inside);       // frozen snapshot replaces the live view inside
   vec2 wuv = faceWarp(vUv);                 // faces are only modified inside the frame
   vec3 warped = cam(wuv);
   vec2 ruv = remap(wuv, f);
@@ -335,7 +340,7 @@ function makeTexture(gl, filter = gl.LINEAR) {
 }
 
 const UNIFORMS = [
-  "uVideo", "uOverlay", "uMask", "uQuad", "uAlpha", "uEffect", "uShape", "uBorder", "uMirror", "uTexel",
+  "uVideo", "uOverlay", "uMask", "uFrozen", "uFreeze", "uQuad", "uAlpha", "uEffect", "uShape", "uBorder", "uMirror", "uTexel",
   "uAspect", "uFrameAspect", "uTime", "uCover", "uColor", "uTargetBits", "uFaceFx", "uFaceCount", "uFacePts", "uFaceR",
 ];
 
@@ -363,7 +368,11 @@ export class Renderer {
     this.videoTex = makeTexture(gl);
     this.overlayTex = makeTexture(gl);
     this.maskTex = makeTexture(gl, gl.NEAREST);
+    this.frozenTex = makeTexture(gl);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); // complete until first freeze
+    this.frozen = false;
     gl.uniform1i(this.u.uVideo, 0);
+    gl.uniform1i(this.u.uFrozen, 3);
     gl.uniform1i(this.u.uOverlay, 1);
     gl.uniform1i(this.u.uMask, 2);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
@@ -402,6 +411,16 @@ export class Renderer {
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
   }
 
+  /** Freezes the picture inside the frame (snapshot of the current camera frame), or unfreezes. */
+  setFrozen(video) {
+    const gl = this.gl;
+    this.frozen = !!video;
+    if (!video) return;
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, this.frozenTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+  }
+
   /**
    * @param {HTMLVideoElement} video
    * @param {object} s  frame state: quad, alpha, effect, shape, border, color [r,g,b] 0..1,
@@ -422,6 +441,7 @@ export class Renderer {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
 
     const u = this.u;
+    gl.uniform1i(u.uFreeze, this.frozen ? 1 : 0);
     gl.uniform1f(u.uAlpha, s.quad ? s.alpha : 0);
     gl.uniform1i(u.uMirror, s.mirror ? 1 : 0);
     gl.uniform2f(u.uTexel, 1 / w, 1 / h);

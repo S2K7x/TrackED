@@ -21,9 +21,25 @@ The bottom sheet has five tabs:
 | **Target** | Limits the colour effect to: Everything, People, Background, Skin, Hair or Clothes (person segmentation) |
 | **Shape** | Rectangle, Rounded, Ellipse, Circle, Heart, Star, Diamond |
 | **Color** | 9 presets plus a custom picker (drives Neon, Tint, the border and laser eyes); neon, animated rainbow, thick or no border |
+| **More** | Capture timer (off / 3 s / 10 s) and the pinch gesture |
+
+Hands-free features (both hands are busy making the frame):
+- **Capture timer**: 3, 2, 1 countdown before a photo or a recording starts. Tap again or press Esc to cancel.
+- **Pinch to switch**: close the frame (thumbs and indexes together) and reopen it within 0.7 s to jump to the next effect.
+- **Freeze**: the picture inside the frame freezes while the live scene keeps moving around it. Move the frozen window across the room.
 
 The top bar has **photo**, **video recording** (MP4 when the browser supports it, WebM otherwise, with the native share sheet on mobile), **camera switch** and **tracking points**. The last one shows the detected points and a HUD with render and tracking FPS.
 You can also swipe left or right on the video to cycle effects. Settings are remembered.
+
+## Phone vs desktop
+| | Phone | Desktop |
+|---|---|---|
+| Layout | Edge-to-edge camera (like a camera app), floating glass controls, bottom sheet with one scrolling row | Video as a rounded card, settings in a right sidebar with titled sections and tile grids, hover states |
+| Input | Swipe on the video to change effect, haptic feedback (Android) | Keyboard: ← → effects, P photo, R record, F freeze, D tracking, Esc cancel timer |
+| Camera | Portrait stream requested in portrait | 16:9 stream |
+| Extras | Screen kept awake while filming (Wake Lock), installable to the home screen (web manifest) | |
+
+Performance adapts to the device (`src/device.js`): phones with few cores or little memory send smaller frames to the models (320 px against 480 px on desktop), use a 480p camera and run face/segmentation once every 3 frames. At runtime, if tracking drops below 12 fps, the heavy models run even less often, and the rate recovers when tracking does.
 
 ## Design
 The UI is light and airy: a warm off-white canvas with soft colour fields, frosted-glass panels, gradient preview tiles, thin line art and a single lime accent. The font is [Urbanist](https://fonts.google.com/specimen/Urbanist). The camera feed sits in a rounded card. On the intro page, the line-art wave bundle is an animated SVG generated in `src/art.js`. Background colour fields are plain radial gradients rather than blurred layers, which keeps compositing cheap, and the glass blur is lighter over live video.
@@ -40,6 +56,7 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `src/renderer.js` | **WebGL2** renderer: shapes, effects, face warps and masks in a single fragment shader |
 | `src/faces.js` | Face anchors (eyes, mouth, nose, size), me/others selection, segmentation categories |
 | `src/capture.js` | Photo and video capture of the canvas |
+| `src/device.js` | Device profile: mobile/desktop, performance tier, detection size, model cadence |
 | `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
 | `src/geometry.js` | Builds the quad between the two hands |
 

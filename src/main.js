@@ -6,6 +6,7 @@ import { mirrorFace, selectFaces, TARGETS } from "./faces.js";
 import { OPTIONS, TABS, DEFAULTS, hexToRgb } from "./options.js";
 import { Capture } from "./capture.js";
 import { drawSpark, drawWaves } from "./art.js";
+import { deviceProfile } from "./device.js";
 
 const $ = (s) => document.querySelector(s);
 const video = $("#cam");
@@ -18,6 +19,11 @@ const MSG = {
   loading: "Loading hand model…",
   showBoth: "Show both hands in an L shape",
   showSecond: "Now show your second hand",
+};
+
+const GROUP_TITLES = {
+  effect: "Effect", face: "Face filter", who: "Apply to", target: "Apply effect to",
+  shape: "Frame shape", color: "Color", border: "Border",
 };
 
 // ---------------- State ----------------
@@ -39,6 +45,10 @@ const FADE_IN = 8;        // alpha units per second
 const FADE_OUT = 5;
 const MAX_MISSES = 3;     // keep the frame through a few missed detections (motion blur, occlusion)
 const FACE_TTL = 0.6;     // seconds before stale face data is dropped
+
+const device = deviceProfile();
+document.documentElement.classList.toggle("is-mobile", device.mobile);
+let extrasEvery = device.extrasEvery; // adapted at runtime from the measured tracking rate
 
 const quadFilter = new PointsFilter(4, { minCutoff: 1.5, beta: 8, dCutoff: 1 });
 const stats = { renderFrames: 0, detectFrames: 0, fps: 0, dps: 0, since: performance.now() };
@@ -92,7 +102,10 @@ function renderChips() {
   const nodes = [];
   tab.groups.forEach((group, gi) => {
     if (gi > 0) nodes.push(el("span", { className: "sep" }));
-    nodes.push(...renderGroup(group));
+    // the wrapper is `display: contents` on mobile (one scrolling row) and a titled section on desktop
+    const g = el("div", { className: `group g-${group}` });
+    g.append(el("h3", { className: "group-title", textContent: GROUP_TITLES[group] }), ...renderGroup(group));
+    nodes.push(g);
   });
   chipsEl.replaceChildren(...nodes);
   chipsEl.querySelector(".on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -165,19 +178,53 @@ $("#debug").addEventListener("click", (e) => {
 });
 $("#flip").addEventListener("click", async () => {
   state.facing = state.facing === "user" ? "environment" : "user";
+  if (renderer?.frozen) toggleFreeze();
   await startCamera();
 });
-$("#photo").addEventListener("click", () => capture?.photo());
+// ---------------- Capture (with optional countdown: both hands are busy making the frame) ----------------
+let countdownTimer = null;
+function withTimer(action) {
+  if (!capture) return;
+  if (countdownTimer) { cancelCountdown(); return; }       // tap again to cancel
+  const secs = Number(settings.timer) || 0;
+  if (!secs) { action(); return; }
+  const el = $("#countdown");
+  let left = secs;
+  const tick = () => {
+    if (left === 0) { cancelCountdown(); action(); return; }
+    el.textContent = left;
+    el.hidden = false;
+    el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop"); // restart the animation
+    buzz(8);
+    left--;
+  };
+  tick();
+  countdownTimer = setInterval(tick, 1000);
+}
+function cancelCountdown() {
+  clearInterval(countdownTimer);
+  countdownTimer = null;
+  $("#countdown").hidden = true;
+}
+
+function takePhoto() {
+  capture.photo();
+  buzz(20);
+  const f = $("#flash");
+  f.hidden = false;
+  f.classList.remove("go"); void f.offsetWidth; f.classList.add("go");
+  setTimeout(() => { f.hidden = true; }, 450);
+}
 
 let recTimer = null;
-$("#rec").addEventListener("click", (e) => {
-  if (!capture) return;
+function toggleRecording() {
   const on = capture.toggleRecording();
-  e.currentTarget.classList.toggle("on", on);
+  $("#rec").classList.toggle("on", on);
   const pill = $("#rec-pill");
   pill.hidden = !on;
   $("#status").style.visibility = on ? "hidden" : "";
   clearInterval(recTimer);
+  buzz(on ? 30 : 15);
   if (on) {
     const t0 = performance.now();
     const tick = () => {
@@ -187,7 +234,32 @@ $("#rec").addEventListener("click", (e) => {
     tick();
     recTimer = setInterval(tick, 500);
   }
-});
+}
+
+$("#photo").addEventListener("click", () => withTimer(takePhoto));
+// stopping a recording is immediate; only starting one uses the timer
+$("#rec").addEventListener("click", () => (capture?.recorder ? toggleRecording() : withTimer(toggleRecording)));
+$("#freeze").addEventListener("click", toggleFreeze);
+
+function toggleFreeze() {
+  if (!renderer) return;
+  const on = !renderer.frozen;
+  renderer.setFrozen(on ? video : null);
+  $("#freeze").classList.toggle("on", on);
+  flash(on ? "Frozen: move the frame around" : "Live");
+  buzz(12);
+}
+
+function buzz(ms) {
+  if (device.mobile) navigator.vibrate?.(ms);
+}
+
+// Keep the screen awake while the camera runs (phones dim after ~30 s without touches,
+// and here both hands are busy). Re-acquired when the page becomes visible again.
+let wakeLock = null;
+async function keepAwake() {
+  try { wakeLock = await navigator.wakeLock?.request("screen"); } catch { /* not allowed / unsupported */ }
+}
 
 // swipe left/right on the video to cycle through effects
 let touchX = null;
@@ -206,20 +278,58 @@ renderTabs();
 renderChips();
 $("#go").addEventListener("click", start, { once: true });
 
-// ---------------- Layout: the video is a rounded card, "contain"-fitted ----------------
+// ---------------- Layout ----------------
+// Mobile: edge-to-edge camera (cover) with a bottom sheet, like a camera app.
+// Desktop: the video is a rounded card on the left, settings live in a sidebar.
+const desktopMQ = matchMedia("(min-width: 900px)");
+const panel = $("#panel");
+const root = document.documentElement.style;
+
 function fitStage() {
   const vw = video.videoWidth || 16, vh = video.videoHeight || 9;
   const W = innerWidth, H = innerHeight;
-  const s = Math.min(W / vw, H / vh);
-  const full = Math.abs(W - vw * s) < 2 && Math.abs(H - vh * s) < 2;
-  // leave a margin around the card unless the video already fills the screen
-  const m = full ? 0 : Math.min(24, W * 0.03);
-  const k = Math.min((W - 2 * m) / vw, (H - 2 * m) / vh);
-  stage.style.width = `${Math.round(vw * k)}px`;
-  stage.style.height = `${Math.round(vh * k)}px`;
-  stage.style.borderRadius = full ? "0" : "";
+  const desk = desktopMQ.matches;
+  const box = desk
+    ? { x: 16, y: 76, w: W - panel.offsetWidth - 48, h: H - 92 }
+    : { x: 0, y: 0, w: W, h: H };
+  const contain = Math.min(box.w / vw, box.h / vh);
+  const cover = Math.max(box.w / vw, box.h / vh);
+  // fill the phone screen, unless that would crop away more than ~25% of the picture (hands at the edges)
+  const bleed = !desk && contain / cover > 0.75;
+  const k = bleed ? cover : contain;
+  const w = Math.round(vw * k), h = Math.round(vh * k);
+  const left = Math.round(box.x + (box.w - w) / 2), top = Math.round(box.y + (box.h - h) / 2);
+  Object.assign(stage.style, { width: `${w}px`, height: `${h}px`, left: `${left}px`, top: `${top}px` });
+  stage.classList.toggle("bleed", bleed);
+  // visible part of the stage, used to place overlays (status, toast, HUD) over the video
+  const vl = Math.max(0, left), vt = Math.max(0, top);
+  root.setProperty("--stage-left", `${vl}px`);
+  root.setProperty("--stage-top", `${vt}px`);
+  root.setProperty("--stage-w", `${Math.min(W, left + w) - vl}px`);
+  root.setProperty("--stage-h", `${Math.min(H, top + h) - vt}px`);
 }
 addEventListener("resize", fitStage);
+desktopMQ.addEventListener("change", fitStage);
+new ResizeObserver(() => {
+  root.setProperty("--sheet-h", `${panel.offsetHeight}px`);
+  fitStage();
+}).observe(panel);
+
+// ---------------- Keyboard (desktop) ----------------
+addEventListener("keydown", (e) => {
+  if (!renderer || e.target.closest?.("input") || e.metaKey || e.ctrlKey || e.altKey) return;
+  const list = OPTIONS.effect.map((o) => o.value);
+  const i = list.indexOf(settings.effect);
+  if (e.key === "ArrowRight") set("effect", list[(i + 1) % list.length]);
+  else if (e.key === "ArrowLeft") set("effect", list[(i + list.length - 1) % list.length]);
+  else if (e.key === "p" || e.key === "P") $("#photo").click();
+  else if (e.key === "r" || e.key === "R") $("#rec").click();
+  else if (e.key === "d" || e.key === "D") $("#debug").click();
+  else if (e.key === "f" || e.key === "F") toggleFreeze();
+  else if (e.key === "Escape" && countdownTimer) cancelCountdown();
+  else return;
+  e.preventDefault();
+});
 
 // ---------------- Startup ----------------
 async function start() {
@@ -233,7 +343,8 @@ async function start() {
     return;
   }
   capture = new Capture(canvas, (msg) => flash(msg));
-  tracker = new HandTracker();
+  tracker = new HandTracker({ detectWidth: device.detectWidth });
+  keepAwake();
   tracker.onResult = onVision;
   showStatus(MSG.loading);
   try {
@@ -253,7 +364,12 @@ async function startCamera() {
   video.srcObject?.getTracks().forEach((t) => t.stop());
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: { facingMode: state.facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+    // portrait screens (phones) ask for a portrait stream so the camera fills the screen
+    video: (() => {
+      const short = device.cameraHeight, long = Math.round(short * 16 / 9);
+      const portrait = innerHeight > innerWidth;
+      return { facingMode: state.facing, width: { ideal: portrait ? short : long }, height: { ideal: portrait ? long : short }, frameRate: { ideal: 30 } };
+    })(),
   });
   video.srcObject = stream;
   await video.play();
@@ -311,8 +427,10 @@ function extrasWanted() {
   if (!state.quad) return {};
   const face = settings.face !== "none";
   const seg = TARGETS[settings.target] != null;
+  if (!face && !seg) return {};
   state.frameNo++;
-  if (face && seg) return state.frameNo % 2 ? { face: true } : { seg: true };
+  if (state.frameNo % extrasEvery) return {};          // device-dependent cadence
+  if (face && seg) return (state.frameNo / extrasEvery) % 2 ? { face: true } : { seg: true };
   return { face, seg };
 }
 
@@ -348,13 +466,30 @@ function onVision(result, timestampMs) {
   if (state.hands.length === 2) {
     const q = quadFromHands(state.hands[0], state.hands[1]);
     state.quad = quadFilter.filter(q, timestampMs / 1000);
-    state.collapsed = quadArea(q, aspect) < 0.0004; // fingers pinched together → close the frame
+    const collapsed = quadArea(q, aspect) < 0.0004; // fingers pinched together → close the frame
+    detectPinch(collapsed);
+    state.collapsed = collapsed;
     state.missStreak = 0;
   } else {
     state.missStreak++;
   }
   const n = state.hands.length;
   showStatus(n === 2 ? "" : n === 1 ? MSG.showSecond : MSG.showBoth);
+}
+
+// Quick pinch (close the frame and reopen it within 0.7 s) → next effect.
+let pinchedAt = 0;
+function detectPinch(collapsed) {
+  const now = performance.now();
+  if (collapsed && !state.collapsed) pinchedAt = now;
+  if (!collapsed && state.collapsed && settings.gesture === "on" && now - pinchedAt < 700) {
+    const list = OPTIONS.effect.filter((o) => o.value !== "none");
+    const i = list.findIndex((o) => o.value === settings.effect);
+    const next = list[(i + 1) % list.length];
+    set("effect", next.value);
+    flash(next.label);
+    buzz(15);
+  }
 }
 
 let lastUpdate = 0;
@@ -391,6 +526,7 @@ function drawDebug() {
   $("#hud-fps").textContent = stats.fps;
   $("#hud-dps").textContent = stats.dps;
   $("#hud-faces").textContent = state.faces.length;
+  $("#hud-mode").textContent = `${state.trackerMode === "worker" ? "Web Worker" : "Main thread"} · ${device.mobile ? "mobile" : "desktop"} ${device.tier} · extras 1/${extrasEvery}`;
 }
 
 function countFps(t) {
@@ -400,6 +536,9 @@ function countFps(t) {
     stats.fps = Math.round(stats.renderFrames * k);
     stats.dps = Math.round(stats.detectFrames * k);
     stats.renderFrames = stats.detectFrames = 0;
+    // tracking can't keep up → run the heavy face/segmentation models less often (and back again)
+    if (state.quad && stats.dps < 12 && extrasEvery < 4) extrasEvery++;
+    else if (stats.dps > 24 && extrasEvery > device.extrasEvery) extrasEvery--;
     stats.since = t;
   }
 }
@@ -408,7 +547,7 @@ function countFps(t) {
 document.addEventListener("visibilitychange", () => {
   if (!video.srcObject) return;
   if (document.hidden) video.pause();
-  else video.play().catch(() => {});
+  else { video.play().catch(() => {}); keepAwake(); }
 });
 
 // test hook (used by automated browser tests only)
