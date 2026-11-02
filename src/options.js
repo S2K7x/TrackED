@@ -39,6 +39,7 @@ export const OPTIONS = {
     { value: "swap", label: "Face swap", upload: "swap" },
   ],
   maskArea: [
+    { value: "face", label: "Appear & disappear" },
     { value: "frame", label: "Inside the frame" },
     { value: "always", label: "Always on" },
   ],
@@ -129,7 +130,7 @@ export const DEFAULTS = {
   effect: "neon",
   face: "none",
   mask: "none",
-  maskArea: "frame",
+  maskArea: "face",
   accessory: "none",
   anchor: "top",
   size: "1",

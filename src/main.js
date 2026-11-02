@@ -2,7 +2,7 @@ import { Renderer } from "./renderer.js";
 import { HandTracker } from "./tracker.js";
 import { PointsFilter, OneEuro } from "./one-euro.js";
 import { paintMask, templateBlob } from "./masks.js";
-import { quadFromHands, quadArea, mirrorLandmarks } from "./geometry.js";
+import { quadFromHands, quadArea, mirrorLandmarks, faceInFrame } from "./geometry.js";
 import { mirrorFace, selectFaces, TARGETS } from "./faces.js";
 import { OPTIONS, TABS, DEFAULTS, hexToRgb } from "./options.js";
 import { Capture } from "./capture.js";
@@ -41,6 +41,7 @@ const state = {
   missStreak: 99,     // consecutive detections without two hands
   collapsed: false,
   frameNo: 0,
+  reveal: [],         // per face 0..1: mask / 3D appear while the frame is on that face
 };
 
 const FADE_IN = 8;        // alpha units per second
@@ -249,7 +250,7 @@ function ensureThree() {
   threeLoading ??= (async () => {
     flash("Loading 3D engine…");
     const { ThreeLayer } = await import("./three-layer.js");
-    three = new ThreeLayer(canvas, renderer.gl);
+    three = new ThreeLayer(canvas, renderer.gl, { samples: device.tier === "low" ? 0 : 4 });
     return three;
   })().catch((err) => { console.error(err); flash("3D is not available on this device"); threeLoading = null; return null; });
   return threeLoading;
@@ -563,17 +564,20 @@ function onFrame() {
   update(t / 1000);
   const fs = frameState(t / 1000);
   renderer.draw(video, fs);
+  const area = settings.maskArea;
   if (settings.mask !== "none") {
-    const inFrame = settings.maskArea === "frame";
+    const inFrame = area === "frame";
     if (!inFrame || (fs.quad && fs.alpha > 0)) {
       renderer.drawMasks(fs.faces, { inFrame, alpha: inFrame ? fs.alpha : 1, mirror: fs.mirror });
     }
   }
   if (three?.active) {
-    const inFrame = settings.maskArea === "frame";
-    if (!inFrame || (fs.quad && fs.alpha > 0.05)) {
-      if (inFrame) renderer.writeFrameStencil();
-      three.render(fs.faces, { width: canvas.width, height: canvas.height, mirror: fs.mirror, inFrame, time: fs.time });
+    const clip = area === "frame";
+    // fade: follows the frame when clipped, the per-face reveal when "appear & disappear"
+    const fade = area === "always" ? 1 : area === "frame" ? (fs.quad ? fs.alpha : 0) : Math.max(0, ...fs.faces.map((f) => f.reveal ?? 0));
+    if (fade > 0.001) {
+      const layer = three.render(fs.faces, { width: canvas.width, height: canvas.height, mirror: fs.mirror, time: fs.time });
+      if (layer) renderer.compositeLayer(layer, { clip, fade: smoothstep(fade) });
     }
   }
   capture.afterDraw(); // photo snapshot must happen right after drawing (drawing buffer isn't preserved)
@@ -616,7 +620,7 @@ function frameState(time) {
     time,
     targetBits: TARGETS[settings.target] || 0,
     faceFx: settings.face,
-    faces: faces.map((f, i) => ({ ...f, on: on[i] })),
+    faces: faces.map((f, i) => ({ ...f, on: on[i], reveal: state.reveal[i] ?? 0 })),
   };
 }
 
@@ -647,6 +651,8 @@ function onVision(result, timestampMs) {
   showStatus(n === 2 ? "" : n === 1 ? MSG.showSecond : MSG.showBoth);
 }
 
+const smoothstep = (x) => x * x * (3 - 2 * x);
+
 // Quick pinch (close the frame and reopen it within 0.7 s) → next effect.
 let pinchedAt = 0;
 function detectPinch(collapsed) {
@@ -666,6 +672,17 @@ let lastUpdate = 0;
 function update(t) {
   const dt = Math.min(0.1, t - (lastUpdate || t));
   lastUpdate = t;
+  // "When the frame is on a face": each face fades in while the frame covers it, out when it leaves
+  const frameOn = state.quad && state.alpha > 0.5 && !state.collapsed;
+  state.faces.forEach((f, i) => {
+    const target = settings.maskArea !== "face" || (frameOn && faceInFrame(f, state.quad)) ? 1 : 0;
+    const r = state.reveal[i] ?? 0;
+    // frame-rate independent easing: ~0.25 s to appear, ~0.35 s to disappear
+    const k = 1 - Math.exp(-dt * (target > r ? 12 : 9));
+    const next = r + (target - r) * k;
+    state.reveal[i] = Math.abs(target - next) < 0.003 ? target : next;
+  });
+  state.reveal.length = state.faces.length;
   const visible = state.quad && state.missStreak <= MAX_MISSES && !state.collapsed;
   state.alpha = visible ? Math.min(1, state.alpha + FADE_IN * dt) : Math.max(0, state.alpha - FADE_OUT * dt);
   if (state.alpha === 0 && !visible && state.quad) {

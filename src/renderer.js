@@ -395,17 +395,23 @@ void main() {
   outColor = vec4(col, a);
 }`;
 
-// Writes stencil = 1 wherever the frame shape covers the pixel (clips the 3D layer).
-const STENCIL_FRAG = `#version 300 es
+// Composites the 3D layer (premultiplied alpha) with a global fade and,
+// optionally, an anti-aliased clip to the frame shape.
+const LAYER_FRAG = `#version 300 es
 precision highp float;
 precision highp int;
 in vec2 vUv;
 out vec4 outColor;
+uniform sampler2D uLayer;
+uniform bool  uClip;
+uniform float uFade;
 ${FRAME_GLSL}
 void main() {
   vec2 fuv, fw;
-  if (frameDist(vUv, fuv, fw) < 0.0) discard;
-  outColor = vec4(0.0);
+  float d = frameDist(vUv, fuv, fw);
+  vec4 c = texture(uLayer, vec2(vUv.x, 1.0 - vUv.y));   // render targets are stored bottom-up
+  float k = uFade * (uClip ? clamp(d + 0.5, 0.0, 1.0) : 1.0);
+  outColor = c * k;
 }`;
 
 function compile(gl, type, src) {
@@ -443,7 +449,7 @@ const UNIFORMS = [
 export class Renderer {
   constructor(canvas) {
     const gl = canvas.getContext("webgl2", {
-      alpha: false, antialias: false, depth: true, stencil: true,   // depth/stencil for the 3D layer
+      alpha: false, antialias: false, depth: false, stencil: false,  // the 3D layer has its own MSAA target
       preserveDrawingBuffer: false, powerPreference: "high-performance",
     });
     if (!gl) throw new Error("WebGL2 is not supported by this browser");
@@ -477,29 +483,37 @@ export class Renderer {
     this.setOverlay(null);
     this.setMask(null);
     this.#initMaskPass();
-    this.stencilProg = link(gl, VERT, STENCIL_FRAG);
-    this.su = {};
-    for (const n of ["uQuad", "uShape", "uFrameAspect"]) this.su[n] = gl.getUniformLocation(this.stencilProg, n);
+    this.layerProg = link(gl, VERT, LAYER_FRAG);
+    this.lu = {};
+    for (const n of ["uLayer", "uClip", "uFade", "uQuad", "uShape", "uFrameAspect"]) this.lu[n] = gl.getUniformLocation(this.layerProg, n);
   }
 
-  /** Marks the frame area in the stencil buffer (value 1); the 3D layer only draws there. */
-  writeFrameStencil() {
-    const gl = this.gl;
-    gl.useProgram(this.stencilProg);
-    gl.bindVertexArray(this.vao);
-    gl.uniform2fv(this.su.uQuad, this.quadData);
-    gl.uniform1i(this.su.uShape, this.shapeIndex || 0);
-    gl.uniform1f(this.su.uFrameAspect, this.frameAspect || 1);
-    gl.clearStencil(0);
-    gl.clear(gl.STENCIL_BUFFER_BIT);
-    gl.enable(gl.STENCIL_TEST);
-    gl.stencilFunc(gl.ALWAYS, 1, 0xff);
-    gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
-    gl.stencilMask(0xff);
-    gl.colorMask(false, false, false, false);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.colorMask(true, true, true, true);
+  /**
+   * Blends a premultiplied-alpha layer texture (the 3D accessories) over the picture.
+   * @param {WebGLTexture} tex
+   * @param {{clip: boolean, fade: number}} o  clip = only inside the frame shape (anti-aliased edge)
+   */
+  compositeLayer(tex, o) {
+    const gl = this.gl, u = this.lu;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.STENCIL_TEST);
+    gl.disable(gl.CULL_FACE);
+    gl.useProgram(this.layerProg);
+    gl.bindVertexArray(this.vao);
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(u.uLayer, 5);
+    gl.uniform1i(u.uClip, o.clip ? 1 : 0);
+    gl.uniform1f(u.uFade, o.fade);
+    gl.uniform2fv(u.uQuad, this.quadData);
+    gl.uniform1i(u.uShape, this.shapeIndex || 0);
+    gl.uniform1f(u.uFrameAspect, this.frameAspect || 1);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.BLEND);
   }
 
   /** three.js shares this context: put back the state our passes rely on. */
@@ -599,7 +613,8 @@ export class Renderer {
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
     for (const f of faces) {
-      if (!f.mesh || f.on === false) continue;
+      if (!f.mesh || f.on === false || f.reveal === 0) continue;
+      gl.uniform1f(u.uAlpha, s.alpha * (f.reveal ?? 1));
       gl.frontFace(frontWinding(f.mesh, this.refTri) ? gl.CCW : gl.CW);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, f.mesh);

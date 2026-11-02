@@ -43,3 +43,19 @@ export function quadArea(q, aspect = 1) {
 export function mirrorLandmarks(lm) {
   return lm.map(p => ({ x: 1 - p.x, y: p.y }));
 }
+
+/** True when p lies inside the frame quad (tested as two triangles, works for convex and mildly concave quads). */
+export function pointInQuad(p, q) {
+  const inTri = (a, b, c) => {
+    const d1 = cross(a, b, p), d2 = cross(b, c, p), d3 = cross(c, a, p);
+    const neg = d1 < 0 || d2 < 0 || d3 < 0, pos = d1 > 0 || d2 > 0 || d3 > 0;
+    return !(neg && pos);
+  };
+  return inTri(q[0], q[1], q[2]) || inTri(q[0], q[2], q[3]);
+}
+
+/** A face counts as "in the frame" when at least 2 of its eyes / nose are inside it. */
+export function faceInFrame(face, q) {
+  if (!q) return false;
+  return [face.eyeL, face.eyeR, face.nose].filter((p) => pointInQuad(p, q)).length >= 2;
+}

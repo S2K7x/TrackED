@@ -32,3 +32,14 @@ test("quadArea", () => {
   assert.equal(quadArea(sq), 1);
   assert.equal(quadArea(sq, 2), 2);
 });
+
+test("pointInQuad / faceInFrame", async () => {
+  const { pointInQuad, faceInFrame } = await import("../src/geometry.js");
+  const q = [{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.25 }, { x: 0.75, y: 0.7 }, { x: 0.25, y: 0.65 }];
+  assert.ok(pointInQuad({ x: 0.5, y: 0.45 }, q));
+  assert.ok(!pointInQuad({ x: 0.1, y: 0.45 }, q));
+  const face = { eyeL: { x: 0.45, y: 0.4 }, eyeR: { x: 0.55, y: 0.4 }, nose: { x: 0.5, y: 0.5 } };
+  assert.ok(faceInFrame(face, q));
+  assert.ok(!faceInFrame({ eyeL: { x: 0.05, y: 0.4 }, eyeR: { x: 0.15, y: 0.4 }, nose: { x: 0.5, y: 0.5 } }, q));
+  assert.ok(!faceInFrame(face, null));
+});

@@ -1,5 +1,7 @@
-// 3D accessories anchored to the head, rendered with three.js into the SAME
-// WebGL canvas as the 2D effects (so photos and recordings include them).
+// 3D accessories anchored to the head, rendered with three.js in the SAME WebGL
+// context as the 2D effects, into an anti-aliased (MSAA) render target. The 2D
+// renderer then composites that layer with a smooth fade and an anti-aliased
+// frame clip, so photos and recordings include the 3D.
 //
 // Pose: MediaPipe Face Landmarker returns, per face, a 4×4 matrix that maps the
 // canonical face model (centimetres, y up, z towards the camera, origin near the
@@ -18,7 +20,8 @@ const MAX_FACES = 4;
 
 export class ThreeLayer {
   /** @param {HTMLCanvasElement} canvas  @param {WebGL2RenderingContext} gl  shared context */
-  constructor(canvas, gl) {
+  /** @param {{samples?: number}} opts  MSAA samples for the 3D layer (0 on low-end phones) */
+  constructor(canvas, gl, { samples = 4 } = {}) {
     this.r = new THREE.WebGLRenderer({ canvas, context: gl, antialias: false, alpha: false });
     this.r.autoClear = false;
     this.r.outputColorSpace = THREE.SRGBColorSpace;
@@ -47,7 +50,8 @@ export class ThreeLayer {
       this.heads.push(head);
     }
     this.template = null; // accessory shown on every head
-    this.stencil = false;
+    this.target = new THREE.WebGLRenderTarget(16, 16, { samples, depthBuffer: true });
+    this.target.texture.colorSpace = THREE.SRGBColorSpace;
     this.poseSmooth = Array.from({ length: MAX_FACES }, () => new PoseSmoother());
   }
 
@@ -89,53 +93,46 @@ export class ThreeLayer {
       head.add(acc);
       head.userData.acc = acc;
     });
-    this.#applyStencil();
-  }
-
-  #applyStencil() {
-    // clip to the hand frame: only draw where the frame pass wrote stencil = 1
-    this.template?.parent && this.heads.forEach((h) => h.traverse((o) => {
-      for (const m of [].concat(o.material || [])) {
-        m.stencilWrite = this.stencil;
-        m.stencilRef = 1;
-        m.stencilFunc = THREE.EqualStencilFunc;
-        m.stencilZPass = THREE.KeepStencilOp;
-        m.needsUpdate = true;
-      }
-    }));
   }
 
   get active() { return !!this.template; }
 
   /**
    * @param {{pose?: Float32Array, on?: boolean}[]} faces
-   * @param {{width: number, height: number, mirror: boolean, inFrame: boolean, time: number}} s
+   * @param {{width: number, height: number, mirror: boolean, time: number}} s
+   * @returns {WebGLTexture|null} the rendered layer (premultiplied alpha), or null when nothing is visible
    */
   render(faces, s) {
-    if (!this.template) return;
-    if (s.inFrame !== this.stencil) { this.stencil = s.inFrame; this.#applyStencil(); }
+    if (!this.template) return null;
     this.camera.aspect = s.width / s.height;
     this.camera.updateProjectionMatrix();
     this.root.scale.x = s.mirror ? -1 : 1;
     let any = false;
     this.heads.forEach((head, i) => {
       const f = faces[i];
-      const show = !!(f && f.pose && f.on !== false);
+      const show = !!(f && f.pose && f.on !== false && (f.reveal ?? 1) > 0);
       head.visible = show;
-      if (!show) { this.poseSmooth[i].reset(); return; }
+      if (!show) { if (!f?.pose) this.poseSmooth[i].reset(); return; }
+      // pop-in: the accessory grows from 40% with a little overshoot as it's revealed
+      const acc = head.userData.acc;
+      if (acc) acc.scale.setScalar(Math.max(0.001, easeOutBack(f.reveal ?? 1)));
       this.poseSmooth[i].apply(f.pose, head.matrix, s.time);
       head.matrixWorldNeedsUpdate = true;
       any = true;
     });
-    if (!any) return;
+    if (!any) return null;
     this.template.userData.animate?.(s.time);
     this.heads.forEach((h) => h.userData.acc?.userData.animate?.(s.time));
 
     const r = this.r;
     r.resetState();                 // the 2D renderer changed GL state behind three's back
-    r.setViewport(0, 0, s.width, s.height);
-    r.clearDepth();
+    if (this.target.width !== s.width || this.target.height !== s.height) this.target.setSize(s.width, s.height);
+    r.setRenderTarget(this.target);
+    r.setClearColor(0x000000, 0);
+    r.clear(true, true, true);
     r.render(this.scene, this.camera);
+    r.setRenderTarget(null);        // resolves MSAA into the texture
+    return r.properties.get(this.target.texture).__webglTexture;
   }
 
   /** Projects a canonical-space point with a pose (used to calibrate / test). */
@@ -144,6 +141,11 @@ export class ThreeLayer {
     const p = new THREE.Vector3(x, y, z).applyMatrix4(m).project(this.camera);
     return { x: (p.x + 1) / 2, y: (1 - p.y) / 2 };
   }
+}
+
+function easeOutBack(t) {
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 0.4 + 0.6 * (1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2));
 }
 
 /** Invisible head that only writes depth, so the back of hats / glasses arms hide behind the head. */

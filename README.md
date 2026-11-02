@@ -18,7 +18,7 @@ The bottom sheet has five tabs:
 |---|---|
 | **Effect** | None, Neon, Tint, Thermal, Cartoon, Glitch, Pixel, Kaleido, Loupe ×2, Invert, Mono, Image (plus your own image) |
 | **Face** | Big eyes, Big mouth, Alien, Balloon head, Tiny face, Swirl, Laser eyes, Anonymize. Applied to **everyone**, **me** (the closest face) or **others** (up to 4 faces), and only while they are inside the frame |
-| **Mask** | Face masks that follow your face in 3D: Wireframe, Visor, Skull, Gold, Feline, War paint (all original designs), **Your mask** (any image painted on the downloadable template) and **Face swap** (pick a photo: its face is mapped onto yours with live lighting). Shown inside the frame only, or always on |
+| **Mask** | Face masks that follow your face in 3D: Wireframe, Visor, Skull, Gold, Feline, War paint (all original designs), **Your mask** (any image painted on the downloadable template) and **Face swap** (pick a photo: its face is mapped onto yours with live lighting). Three display modes (shared with 3D): **Appear & disappear**, **Inside the frame** or **Always on** (see below) |
 | **3D** | 3D accessories locked to your head pose: Crown, Halo, Shades, Horns, Party hat, Mohawk, Cat ears (original models built from primitives), or **your own `.glb` model** placed on the head, on the eyes or around the head, at 75 to 150% size |
 | **Target** | Limits the colour effect to: Everything, People, Background, Skin, Hair or Clothes (person segmentation) |
 | **Shape** | Rectangle, Rounded, Ellipse, Circle, Heart, Star, Diamond |
@@ -81,12 +81,18 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 - **Face swap:** the photo goes through MediaPipe in IMAGE mode, and its own landmarks become the texture coordinates. Per-vertex alpha fades the outline and opens the eyes and mouth, so the live eyes blink and the mouth talks. A local colour transfer (live low-pass ÷ photo low-pass) matches skin tone and lighting.
 - **Smoothing:** meshes go through a One Euro filter, with one filter bank per face. On slow devices the last face is kept for about 3 model updates, so masks don't flicker.
 
+## Display modes for masks and 3D
+| Mode | Behaviour |
+|---|---|
+| **Appear & disappear** (default) | When the frame passes over a face (2 of eyes/nose inside it), that face's mask and accessory fade and pop in **in full**, even the parts outside the frame such as a crown above the head. They fade out when the frame leaves. Easing is exponential and frame-rate independent (about 0.25 s in, 0.35 s out), and accessories grow with a slight overshoot. |
+| **Inside the frame** | Only the part inside the frame shape is visible, with an anti-aliased edge, so the frame works like a window. |
+| **Always on** | Visible all the time, even without a frame. |
+
 ## 3D accessories: how they work
 - The Face Landmarker runs with `outputFacialTransformationMatrixes`. For each face it returns a 4×4 head pose that maps the canonical face model (centimetres, y up, z towards the camera, origin near the centre of the head) into camera space.
 - A three.js `PerspectiveCamera` with a 63° vertical field of view (MediaPipe's virtual camera) projects that pose onto the video. In testing, the projected canonical nose tip landed within 0.5% of the detected nose landmark.
-- **One shared WebGL context.** three.js renders into the same canvas after the 2D effects and face masks, so photos and recordings include the 3D. Both renderers reset GL state before drawing (`resetState()` on the three.js side, an explicit reset on ours).
+- **One shared WebGL context.** three.js renders the accessories into a **multisampled (MSAA ×4) render target**. The 2D renderer then composites that layer (premultiplied alpha) with the fade and, in "Inside the frame" mode, an anti-aliased clip to the frame shape. Edges stay smooth even though the main canvas has no antialiasing, and photos and recordings include the 3D. Low-end phones skip MSAA. Both renderers reset GL state before drawing.
 - **Head occluder.** An invisible, depth-only ellipsoid sits where the head is, so the back of a crown, the arms of the glasses or a hat brim correctly disappear behind your head.
-- **Frame clipping.** A stencil pass writes the frame shape (same SDF code), and accessory materials only draw where stencil = 1.
 - **Pose smoothing.** Position follows faster when you move fast and smooths more when you are still. Rotation uses an adaptive slerp.
 - **Your own models.** Load a `.glb` file (Draco-compressed meshes are supported). It is centred, scaled to the head and anchored on the head, on the eyes or around the head.
 - three.js (`three@0.160.0`, through an import map) is only downloaded the first time a 3D option is picked.
