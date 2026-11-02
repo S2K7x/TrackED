@@ -122,6 +122,15 @@
     </div>
   </section>
 
+  <!-- music lesson card (wait-mode songs, rhythm lessons, first steps) -->
+  <section id="lesson" class="glass" aria-live="polite" hidden>
+    <header><div><h2></h2><p class="sub"></p></div><span class="stars"></span></header>
+    <p class="text"></p>
+    <div class="next"></div>
+    <div class="bar"><i></i></div>
+    <div class="actions"><button class="restart chip">Restart</button><button class="close chip">Close</button></div>
+  </section>
+
   <div id="hint" class="pill glass" hidden><i class="dot"></i><span></span></div>
 
   <section id="helpPanel" class="glass" role="dialog" aria-modal="true" aria-labelledby="helpTitle" hidden>
@@ -129,7 +138,7 @@
     <div class="grid">
       <article><b>The frame</b><p>Make an <em>L</em> with the thumb and index of each hand. Everything inside the frame changes. Pinch it shut and reopen quickly to switch effect.</p></article>
       <article><b>One-hand signs</b><p>👍 hold for a photo · ✌️ next effect · 🖐 freeze the frame.</p></article>
-      <article><b>Music mode</b><p>Switch <em>Effects → Music</em> at the top of the panel (or <kbd>M</kbd>). Theremin, Keys (pinch thumb + finger), Harp (sweep across strings) and Drums (tap pads downwards). Notes always stay in the chosen scale. Record a loop with <kbd>L</kbd>.</p></article>
+      <article><b>Music mode</b><p>Switch <em>Effects → Music</em> at the top of the panel (or <kbd>M</kbd>). 8 instruments: Theremin, Keys, Harp, Drums, Chords, Arp, Beats and DJ. Never played music? Open <em>Learn</em>: first steps, songs that wait for you, rhythm games and music basics. <em>Band</em> adds drums and bass in your key. Loop with <kbd>L</kbd>.</p></article>
       <article><b>Masks &amp; 3D</b><p>In the Mask and 3D tabs. By default they appear when the frame passes over a face.</p></article>
       <article class="desk"><b>Keyboard</b><p><kbd>←</kbd> <kbd>→</kbd> effects · <kbd>P</kbd> photo · <kbd>R</kbd> record · <kbd>F</kbd> freeze · <kbd>D</kbd> tracking · <kbd>?</kbd> help</p></article>
       <article><b>Tracking tips</b><p>Good light, hands fully in view, about an arm's length from the camera. A plain background helps.</p></article>
@@ -161,7 +170,7 @@
     <div id="modes" class="seg" role="radiogroup" aria-label="Mode"></div>
     <div id="tabs" class="row" role="tablist"></div>
     <div id="chips" class="row"></div>
-    <div class="shortcuts"><span><kbd>←</kbd> <kbd>→</kbd> effects</span><span><kbd>P</kbd> photo</span><span><kbd>R</kbd> record</span><span><kbd>F</kbd> freeze</span><span><kbd>D</kbd> tracking</span><span><kbd>M</kbd> music mode</span><span class="fx-only">👍 ✌️ 🖐 one-hand signs</span><span class="music-only"><kbd>L</kbd> loop</span></div>
+    <div class="shortcuts"><span><kbd>←</kbd> <kbd>→</kbd> effects</span><span><kbd>P</kbd> photo</span><span><kbd>R</kbd> record</span><span><kbd>F</kbd> freeze</span><span><kbd>D</kbd> tracking</span><span><kbd>M</kbd> music mode</span><span class="fx-only">👍 ✌️ 🖐 one-hand signs</span><span class="music-only"><kbd>L</kbd> loop</span><span class="music-only"><kbd>←</kbd> <kbd>→</kbd> instruments</span></div>
   </section>
 </main>
 

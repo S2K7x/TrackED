@@ -11,7 +11,93 @@
 
 import { midiToFreq } from "./theory.js";
 
-const MAX_VOICES = 24;
+const MAX_VOICES = 32;
+
+/**
+ * Synth recipes. build() wires oscillators into `env`; the shared code applies
+ * the amplitude envelope (attack/decay time constants, sustain level, release)
+ * and stops the note after `length` seconds unless it is held.
+ */
+const TIMBRES = {
+  glass: { attack: 0.004, decay: 0.45, sustain: 0.05, release: 0.35, level: 0.5, length: 1.4,
+    build({ f, env, osc, gain }) { osc("sine", f).connect(gain(0.8, env)); osc("sine", f * 2).connect(gain(0.25, env)); osc("triangle", f * 3.01).connect(gain(0.06, env)); } },
+  // FM electric piano: a sine carrier whose frequency is modulated by a sine at the same
+  // ratio; the modulation index decays, so the attack is bright and the tail is mellow
+  epiano: { attack: 0.003, decay: 0.8, sustain: 0.15, release: 0.4, level: 0.55, length: 1.8,
+    build({ c, t, f, env, osc, gain }) {
+      const car = osc("sine", f), mod = osc("sine", f), idx = c.createGain();
+      idx.gain.setValueAtTime(f * 2.2, t); idx.gain.setTargetAtTime(f * 0.3, t, 0.25);
+      mod.connect(idx).connect(car.frequency);
+      car.connect(gain(0.9, env));
+      osc("sine", f * 2).connect(gain(0.08, env));
+    } },
+  // additive organ: drawbars at 1, 2, 3 and 4 × the fundamental, instant attack, full sustain
+  organ: { attack: 0.006, decay: 1, sustain: 1, release: 0.08, level: 0.32, length: 0.5,
+    build({ f, env, osc, gain }) { [[1, 0.6], [2, 0.4], [3, 0.25], [4, 0.15]].forEach(([k, a]) => osc("sine", f * k).connect(gain(a, env))); } },
+  // marimba: FM with a 4:1 ratio and a very fast index decay = wooden "tock"
+  marimba: { attack: 0.002, decay: 0.25, sustain: 0.01, release: 0.2, level: 0.6, length: 0.8,
+    build({ c, t, f, env, osc, gain }) {
+      const car = osc("sine", f), mod = osc("sine", f * 4), idx = c.createGain();
+      idx.gain.setValueAtTime(f * 3, t); idx.gain.setTargetAtTime(0, t, 0.03);
+      mod.connect(idx).connect(car.frequency);
+      car.connect(gain(1, env));
+    } },
+  // strings: detuned saws, slow attack, low-pass, gentle vibrato
+  strings: { attack: 0.18, decay: 1, sustain: 0.85, release: 0.7, level: 0.32, length: 1.2,
+    build({ c, f, env, osc, gain }) {
+      const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2200; lp.connect(env);
+      const lfo = osc("sine", 5.2), depth = c.createGain(); depth.gain.value = 9; lfo.connect(depth);
+      for (const d of [-8, 0, 8]) { const o = osc("sawtooth", f, d); depth.connect(o.detune); o.connect(gain(0.3, lp)); }
+    } },
+  // brass: saw through a filter whose cutoff swells with the attack
+  brass: { attack: 0.04, decay: 0.6, sustain: 0.7, release: 0.2, level: 0.38, length: 0.9,
+    build({ c, t, f, velocity, env, osc, gain }) {
+      const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 2;
+      lp.frequency.setValueAtTime(f * 1.5, t); lp.frequency.setTargetAtTime(f * (3 + 5 * velocity), t, 0.06); lp.frequency.setTargetAtTime(f * 3, t + 0.15, 0.3);
+      lp.connect(env);
+      osc("sawtooth", f).connect(gain(0.5, lp)); osc("sawtooth", f, 6).connect(gain(0.3, lp));
+    } },
+  synth: { attack: 0.005, decay: 0.3, sustain: 0.6, release: 0.3, level: 0.45, length: 1.2,
+    build({ c, t, f, velocity, env, osc, gain }) {
+      const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.Q.value = 4;
+      lp.frequency.setValueAtTime(400 + 5000 * velocity, t); lp.frequency.setTargetAtTime(1200, t, 0.25); lp.connect(env);
+      osc("sawtooth", f).connect(gain(0.5, lp)); osc("square", f / 2).connect(gain(0.15, lp));
+    } },
+  pad: { attack: 0.12, decay: 1, sustain: 0.9, release: 0.9, level: 0.4, length: 0.9,
+    build({ c, f, env, osc, gain }) {
+      const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1400; lp.connect(env);
+      osc("sawtooth", f, -9).connect(gain(0.3, lp)); osc("sawtooth", f, 9).connect(gain(0.3, lp)); osc("triangle", f / 2).connect(gain(0.3, lp));
+    } },
+  // 8-bit: pulse-ish square, no filter, a quick pitch blip on the attack
+  chip: { attack: 0.002, decay: 0.15, sustain: 0.5, release: 0.05, level: 0.22, length: 0.4,
+    build({ t, f, env, osc, gain }) { const o = osc("square", f * 2); o.frequency.setValueAtTime(f * 2, t); o.frequency.setTargetAtTime(f, t, 0.01); o.connect(gain(0.6, env)); osc("square", f, 12).connect(gain(0.3, env)); } },
+  // choir: a buzzy source through three band-pass "formants" of the vowel "ah"
+  choir: { attack: 0.15, decay: 1, sustain: 0.85, release: 0.6, level: 0.9, length: 1.2,
+    build({ c, f, env, osc, gain }) {
+      const src = c.createGain(); src.gain.value = 1;
+      for (const d of [-6, 6]) osc("sawtooth", f, d).connect(gain(0.3, src));
+      for (const [ff, q, a] of [[800, 8, 1], [1150, 9, 0.6], [2900, 12, 0.25]]) {
+        const bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = ff; bp.Q.value = q;
+        src.connect(bp); bp.connect(gain(a, env));
+      }
+    } },
+  // bass: sine sub + a filtered saw for definition
+  bass: { attack: 0.004, decay: 0.2, sustain: 0.7, release: 0.08, level: 0.6, length: 0.3,
+    build({ c, f, env, osc, gain }) {
+      osc("sine", f).connect(gain(0.8, env));
+      const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = Math.min(1200, f * 6); lp.connect(env);
+      osc("sawtooth", f).connect(gain(0.25, lp));
+    } },
+};
+// a "pluck" without the AudioWorklet falls back to a fast-decaying synth
+TIMBRES.pluck = { ...TIMBRES.synth, sustain: 0.0001, decay: 0.12, length: 0.9 };
+
+/** Drum kits: kick pitch sweep [from, to, seconds], click level, optional low-pass tone. */
+const KITS = {
+  acoustic: { kick: [150, 48, 0.45], click: 0.35 },
+  electro: { kick: [120, 38, 0.9], click: 0.15 },     // long 808-style boom
+  lofi: { kick: [110, 45, 0.4], click: 0.1, tone: 3200 },
+};
 const GM_DRUMS = { kick: 36, snare: 38, clap: 39, hat: 42, tom: 45, crash: 49 };
 
 export class AudioEngine {
@@ -46,7 +132,6 @@ export class AudioEngine {
     this.master = c.createGain();
     this.master.gain.value = 0.8;
     this.limiter = c.createDynamicsCompressor();
-    Object.assign(this.limiter, {});
     this.limiter.threshold.value = -10;
     this.limiter.knee.value = 6;
     this.limiter.ratio.value = 8;
@@ -59,7 +144,12 @@ export class AudioEngine {
     if (this.streamDest) this.limiter.connect(this.streamDest);
 
     this.bus = c.createGain();
-    this.bus.connect(this.master);
+    // DJ filter (wide open unless the DJ instrument moves it)
+    this.djFilter = c.createBiquadFilter();
+    this.djFilter.type = "lowpass";
+    this.djFilter.frequency.value = 20000;
+    this.djFilter.Q.value = 0.7;
+    this.bus.connect(this.djFilter).connect(this.master);
     // reverb
     this.reverb = c.createConvolver();
     this.reverbSend = c.createGain();
@@ -126,97 +216,104 @@ export class AudioEngine {
   }
 
   /**
-   * Starts a note; returns a handle with stop(). One-shot timbres stop themselves.
+   * Starts a note; returns a handle with stop().
    * @param {number} midi
-   * @param {{timbre?: "glass"|"synth"|"pad"|"pluck", velocity?: number, hold?: boolean}} o
+   * @param {{timbre?: string, velocity?: number, hold?: boolean, when?: number, duration?: number}} o
+   *   when = audio-clock start time (scheduled notes from the band / arp / sequencer);
+   *   duration = auto-release after that many seconds (default depends on the timbre);
+   *   hold = sustain until stop() (pinch keys).
    */
-  noteOn(midi, { timbre = "glass", velocity = 0.8, hold = false } = {}) {
+  noteOn(midi, { timbre = "glass", velocity = 0.8, hold = false, when = 0, duration } = {}) {
     if (!this.ready) return { stop() {} };
-    this.#midi(0x90, midi, velocity);
+    const c = this.ctx, t = Math.max(c.currentTime, when || 0);
+    const delayMs = Math.max(0, (t - c.currentTime) * 1000);
+    setTimeout(() => this.#midi(0x90, midi, velocity), delayMs);
     const stopMidi = () => this.#midi(0x80, midi, 0);
     const f = midiToFreq(midi);
     if (timbre === "pluck" && this.pluckNode) {
-      this.pluckNode.port.postMessage({ type: "pluck", freq: f, velocity, seconds: 3 });
-      setTimeout(stopMidi, 400);
+      setTimeout(() => this.pluckNode?.port.postMessage({ type: "pluck", freq: f, velocity, seconds: 3 }), delayMs);
+      setTimeout(stopMidi, delayMs + 400);
       return { stop() {} };
     }
-    const c = this.ctx, t = c.currentTime;
+    const T = TIMBRES[timbre] ?? TIMBRES.glass;
     const env = c.createGain();
     env.gain.value = 0;
     env.connect(this.bus);
     const oscs = [];
-    const osc = (type, freq, gain = 1, detune = 0) => {
+    const osc = (type, freq, detune = 0) => {
       const o = c.createOscillator();
       o.type = type;
       o.frequency.value = freq;
       o.detune.value = detune;
-      const g = c.createGain();
-      g.gain.value = gain;
-      o.connect(g);
       oscs.push(o);
-      return g;
+      return o;
     };
-    let release = 0.3, sustain = 0.6;
-    if (timbre === "glass") {          // bell-like: fundamental + soft octave, long natural decay
-      osc("sine", f, 0.8).connect(env);
-      osc("sine", f * 2, 0.25).connect(env);
-      osc("triangle", f * 3.01, 0.06).connect(env);
-      env.gain.setTargetAtTime(0.5 * velocity, t, 0.004);
-      env.gain.setTargetAtTime(0.0001, t + 0.02, hold ? 1.5 : 0.45);
-      release = 0.35;
-    } else if (timbre === "synth" || timbre === "pluck") {   // saw through a sweeping low-pass
-      const lp = c.createBiquadFilter();
-      lp.type = "lowpass";
-      lp.Q.value = 4;
-      lp.frequency.setValueAtTime(400 + 5000 * velocity, t);
-      lp.frequency.setTargetAtTime(timbre === "pluck" ? 500 : 1200, t, timbre === "pluck" ? 0.08 : 0.25);
-      lp.connect(env);
-      osc("sawtooth", f, 0.5).connect(lp);
-      osc("square", f / 2, 0.15).connect(lp);
-      env.gain.setTargetAtTime(0.45 * velocity, t, 0.005);
-      sustain = timbre === "pluck" ? 0.0001 : 0.6;
-      env.gain.setTargetAtTime(0.45 * velocity * sustain, t + 0.05, timbre === "pluck" ? 0.12 : 0.3);
-    } else {                           // pad: detuned saws, slow attack
-      const lp = c.createBiquadFilter();
-      lp.type = "lowpass";
-      lp.frequency.value = 1400;
-      lp.connect(env);
-      osc("sawtooth", f, 0.3, -9).connect(lp);
-      osc("sawtooth", f, 0.3, 9).connect(lp);
-      osc("triangle", f / 2, 0.3).connect(lp);
-      env.gain.setTargetAtTime(0.4 * velocity, t, 0.12);
-      release = 0.9;
-    }
+    const gain = (v, to) => { const g = c.createGain(); g.gain.value = v; g.connect(to); return g; };
+    T.build({ c, t, f, velocity, env, osc, gain });
+    // amplitude envelope: attack → decay to sustain
+    const peak = T.level * velocity;
+    env.gain.setValueAtTime(0, t);
+    env.gain.setTargetAtTime(peak, t, T.attack);
+    env.gain.setTargetAtTime(peak * T.sustain, t + T.attack * 3, T.decay);
     for (const o of oscs) o.start(t);
     let stopped = false;
     const voice = {
-      stop: (r = release) => {
+      stop: (r = T.release, at = c.currentTime) => {
         if (stopped) return;
         stopped = true;
-        stopMidi();
-        const now = c.currentTime;
-        env.gain.cancelScheduledValues(now);
-        env.gain.setValueAtTime(env.gain.value, now);
-        env.gain.setTargetAtTime(0, now, r / 4);
-        for (const o of oscs) o.stop(now + r * 1.5);
+        setTimeout(stopMidi, Math.max(0, (at - c.currentTime) * 1000));
+        env.gain.cancelScheduledValues(at);
+        env.gain.setTargetAtTime(0, at, r / 4);
+        for (const o of oscs) o.stop(at + r * 1.5);
         oscs[0].onended = () => env.disconnect();
         this.voices = this.voices.filter((v) => v !== voice);
       },
     };
     this.#track(voice);
-    if (!hold) setTimeout(() => voice.stop(), timbre === "pad" ? 900 : 1600);
+    if (!hold) voice.stop(T.release, t + (duration ?? T.length));
     return voice;
   }
 
-  /** Synthesised drum hits (no samples). */
-  drum(name, velocity = 0.9) {
+  /** Metronome click on the audio clock. */
+  click(when, accent = false) {
     if (!this.ready) return;
-    this.#midi(0x99, GM_DRUMS[name] ?? 38, velocity, true);
-    setTimeout(() => this.#midi(0x89, GM_DRUMS[name] ?? 38, 0, true), 100);
-    const c = this.ctx, t = c.currentTime;
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.frequency.value = accent ? 1760 : 1175;
+    g.gain.setValueAtTime(accent ? 0.5 : 0.3, when);
+    g.gain.setTargetAtTime(0.0001, when + 0.002, 0.012);
+    o.connect(g).connect(this.master);
+    o.start(when);
+    o.stop(when + 0.08);
+  }
+
+  /** DJ filter on the whole instrument + band bus: cutoff 0..1 (closed → open), resonance 0..1. */
+  setFilter(cutoff = 1, resonance = 0) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.djFilter.frequency.setTargetAtTime(120 * 2 ** (cutoff * 7.4), t, 0.03);   // 120 Hz → ~20 kHz, exponential
+    this.djFilter.Q.setTargetAtTime(0.7 + resonance * 12, t, 0.05);
+  }
+
+  setEchoAmount(v) {
+    if (this.ctx) this.echoSend.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+  }
+
+  /** Synthesised drum hits (no samples). */
+  drum(name, velocity = 0.9, { kit = "acoustic", when = 0 } = {}) {
+    if (!this.ready) return;
+    const c = this.ctx, t = Math.max(c.currentTime, when || 0);
+    const delayMs = Math.max(0, (t - c.currentTime) * 1000);
+    setTimeout(() => this.#midi(0x99, GM_DRUMS[name] ?? 38, velocity, true), delayMs);
+    setTimeout(() => this.#midi(0x89, GM_DRUMS[name] ?? 38, 0, true), delayMs + 100);
+    const K = KITS[kit] ?? KITS.acoustic;
     const out = c.createGain();
     out.gain.value = velocity;
-    out.connect(this.bus);
+    if (K.tone) {           // lo-fi: dull, slightly crushed-sounding top end
+      const lp = c.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = K.tone;
+      out.connect(lp).connect(this.bus);
+    } else out.connect(this.bus);
     const noise = (dur, type, freq, q = 1, gain = 1, decay = dur / 4) => {
       const s = c.createBufferSource();
       s.buffer = this.noise;
@@ -244,10 +341,10 @@ export class AudioEngine {
       o.stop(t + dur);
     };
     switch (name) {
-      case "kick": tone(160, 42, 0.5, "sine", 1.1); noise(0.02, "lowpass", 3000, 1, 0.3, 0.005); break;
+      case "kick": tone(K.kick[0], K.kick[1], K.kick[2], "sine", 1.1); noise(0.02, "lowpass", 3000, 1, K.click, 0.005); break;
       case "snare": tone(190, 140, 0.15, "triangle", 0.5); noise(0.25, "highpass", 1200, 0.7, 0.8, 0.05); break;
       case "hat": noise(0.08, "highpass", 7500, 0.8, 0.5, 0.015); break;
-      case "clap": for (const d of [0, 0.012, 0.024]) setTimeout(() => noise(0.15, "bandpass", 1500, 2, 0.9, 0.03), d * 1000); break;
+      case "clap": noise(0.15, "bandpass", 1500, 2, 0.9, 0.03); setTimeout(() => noise(0.12, "bandpass", 1400, 2, 0.6, 0.03), delayMs + 12); break;
       case "tom": tone(220, 110, 0.4, "sine", 0.9); break;
       case "crash": noise(1.4, "highpass", 5000, 0.6, 0.45, 0.35); break;
       default: break;

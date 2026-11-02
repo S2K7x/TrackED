@@ -136,12 +136,56 @@ Object.assign(OPTIONS, {
     { value: "keys", label: "Keys", tile: "repeating-linear-gradient(90deg,#f4f4f1 0 9px,#141413 9px 11px)" },
     { value: "harp", label: "Harp", tile: "repeating-linear-gradient(90deg,#2b1d14 0 7px,#f0cc62 7px 8px)" },
     { value: "drums", label: "Drums", tile: "radial-gradient(circle at 30% 35%,var(--pick) 0 20%,transparent 21%),radial-gradient(circle at 70% 65%,#f4f4f1 0 20%,transparent 21%),#1d1d1b" },
+    { value: "chords", label: "Chords", tile: "linear-gradient(135deg,#f0956a 0 33%,#e9d34b 33% 66%,#6fa35a 66%)" },
+    { value: "arp", label: "Arp", tile: "repeating-linear-gradient(45deg,#141413 0 6px,var(--pick) 6px 9px)" },
+    { value: "beats", label: "Beats", tile: "conic-gradient(var(--pick) 25%,#2a2a27 0 50%,var(--pick) 0 75%,#2a2a27 0) 0 0/16px 16px" },
+    { value: "dj", label: "DJ", tile: "radial-gradient(circle,#141413 0 12%,var(--pick) 13% 16%,#141413 17% 40%,#3a3a36 41%)" },
   ],
   sound: [
     { value: "glass", label: "Glass" },
+    { value: "epiano", label: "E-piano" },
+    { value: "marimba", label: "Marimba" },
     { value: "pluck", label: "Pluck" },
+    { value: "organ", label: "Organ" },
+    { value: "strings", label: "Strings" },
+    { value: "brass", label: "Brass" },
+    { value: "choir", label: "Choir" },
     { value: "synth", label: "Synth" },
     { value: "pad", label: "Pad" },
+    { value: "chip", label: "8-bit" },
+  ],
+  style: [
+    { value: "off", label: "Band off" },
+    { value: "pop", label: "Pop" },
+    { value: "lofi", label: "Lo-fi" },
+    { value: "house", label: "House" },
+    { value: "rock", label: "Rock" },
+    { value: "reggae", label: "Reggae" },
+    { value: "hiphop", label: "Hip-hop" },
+  ],
+  progression: [
+    { value: "pop", label: "I–V–vi–IV (pop)" },
+    { value: "ballad", label: "I–vi–IV–V (ballad)" },
+    { value: "epic", label: "vi–IV–I–V (epic)" },
+    { value: "blues", label: "12-bar blues" },
+    { value: "calm", label: "I–IV (calm)" },
+  ],
+  tempo: [
+    { value: "auto", label: "Style tempo" },
+    { value: "70", label: "70 BPM" },
+    { value: "90", label: "90 BPM" },
+    { value: "110", label: "110 BPM" },
+    { value: "128", label: "128 BPM" },
+  ],
+  metronome: [
+    { value: "off", label: "Metronome off" },
+    { value: "on", label: "Metronome" },
+  ],
+  kit: [
+    { value: "auto", label: "Style kit" },
+    { value: "acoustic", label: "Acoustic" },
+    { value: "electro", label: "Electro 808" },
+    { value: "lofi", label: "Lo-fi" },
   ],
   scale: [
     { value: "pentatonic", label: "Pentatonic" },
@@ -180,9 +224,21 @@ Object.assign(OPTIONS, {
 
 /** Tabs of the music mode (the effects tabs are hidden while it is on). */
 export const MUSIC_TABS = [
-  { id: "instrument", label: "Instrument", groups: ["instrument", "sound", "looper"] },
+  { id: "instrument", label: "Play", groups: ["instrument", "sound", "looper"] },
+  { id: "band", label: "Band", groups: ["preset", "style", "progression", "tempo", "metronome", "kit"] },
+  { id: "learn", label: "Learn", groups: ["lesson"] },
   { id: "notes", label: "Notes", groups: ["scale", "root", "octave", "snap"] },
   { id: "mix", label: "Mix", groups: ["reverb", "echo", "midi"] },
+];
+
+/** One-tap "jam" setups for people who don't know where to start. */
+export const PRESETS = [
+  { id: "lofi", label: "☕ Chill lo-fi", set: { instrument: "keys", sound: "epiano", style: "lofi", progression: "ballad", scale: "minorPenta", root: "9", tempo: "auto", reverb: "room" } },
+  { id: "pop", label: "⭐ Pop star", set: { instrument: "chords", sound: "pluck", style: "pop", progression: "pop", scale: "major", root: "0", tempo: "auto", reverb: "room" } },
+  { id: "dance", label: "🪩 Dance floor", set: { instrument: "dj", sound: "synth", style: "house", progression: "epic", scale: "minor", root: "9", tempo: "auto", reverb: "hall" } },
+  { id: "blues", label: "🎷 Blues jam", set: { instrument: "keys", sound: "organ", style: "rock", progression: "blues", scale: "blues", root: "4", tempo: "90", reverb: "room" } },
+  { id: "dream", label: "🌙 Dreamy", set: { instrument: "harp", sound: "glass", style: "off", progression: "calm", scale: "pentatonic", root: "2", tempo: "auto", reverb: "hall", echo: "on" } },
+  { id: "arcade", label: "👾 Arcade", set: { instrument: "arp", sound: "chip", style: "hiphop", progression: "epic", scale: "minor", root: "7", tempo: "110", reverb: "off" } },
 ];
 
 export const TABS = [
@@ -222,7 +278,7 @@ export function exclusiveConflicts(settings, key, value) {
 }
 
 /** Tab groups drawn by custom UI (sliders) instead of OPTIONS chips. */
-export const PANEL_GROUPS = ["fit", "looper"];
+export const PANEL_GROUPS = ["fit", "looper", "preset", "lesson"];
 
 export const DEFAULTS = {
   effect: "neon",
@@ -250,6 +306,11 @@ export const DEFAULTS = {
   reverb: "room",
   echo: "off",
   midi: "off",
+  style: "off",
+  progression: "pop",
+  tempo: "auto",
+  metronome: "off",
+  kit: "auto",
 };
 
 /** "#ff2d55" → [1, 0.176, 0.333] */

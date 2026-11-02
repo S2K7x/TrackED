@@ -4,10 +4,12 @@ import { PointsFilter, OneEuro } from "./one-euro.js";
 import { paintMask, templateBlob } from "./masks.js";
 import { quadFromHands, quadArea, mirrorLandmarks, faceInFrame } from "./geometry.js";
 import { mirrorFace, selectFaces, TARGETS } from "./faces.js";
+import { PRESETS } from "./options.js";
 import { OPTIONS, TABS, MUSIC_TABS, DEFAULTS, hexToRgb, exclusiveConflicts } from "./options.js";
 import { Capture } from "./capture.js";
 import { AudioEngine } from "./music/audio.js";
-import { MusicMode } from "./music/controller.js";
+import { MusicMode, lessonSettings, SONGS, RHYTHMS } from "./music/controller.js";
+import { MUSIC_GUIDES, MUSIC_GUIDE_ORDER } from "./music/learn.js";
 import { drawSpark, drawWaves } from "./art.js";
 import { deviceProfile } from "./device.js";
 import { classifySign, SignHold } from "./gestures.js";
@@ -36,6 +38,8 @@ const GROUP_TITLES = {
   timer: "Capture timer", gesture: "Pinch gesture", signs: "One-hand signs",
   instrument: "Instrument", sound: "Sound", looper: "Looper", scale: "Scale", root: "Key",
   octave: "Range", snap: "Theremin pitch", reverb: "Reverb", echo: "Echo", midi: "MIDI output",
+  preset: "Jam presets: one tap to start", style: "Band style", progression: "Chord progression", tempo: "Tempo",
+  metronome: "Metronome", kit: "Drum kit", lesson: "Lessons",
 };
 
 // ---------------- State ----------------
@@ -170,6 +174,14 @@ function renderGroup(group) {
     b.addEventListener("click", toggleLoop);
     return [b];
   }
+  if (group === "preset") {
+    return PRESETS.map((pr) => {
+      const b = el("button", { className: "chip" }, pr.label);
+      b.addEventListener("click", () => applyPreset(pr));
+      return b;
+    });
+  }
+  if (group === "lesson") return renderLessons();
   if (group === "midi" && !navigator.requestMIDIAccess) return [el("span", { className: "chip", textContent: "MIDI needs Chrome or Edge" })];
   if (group === "effect") {
     const nodes = OPTIONS.effect.map((o) => {
@@ -264,7 +276,7 @@ function set(key, value, rerender = true) {
 // ---------------- Music mode ----------------
 // A separate mode with its own tabs: the frame, masks and 3D are switched off,
 // only the hand model runs (lowest latency), and the hands play an instrument.
-const MUSIC_KEYS = new Set(["instrument", "sound", "scale", "root", "octave", "snap", "reverb", "echo", "midi"]);
+const MUSIC_KEYS = new Set(["instrument", "sound", "scale", "root", "octave", "snap", "reverb", "echo", "midi", "style", "progression", "tempo", "metronome", "kit"]);
 const engine = new AudioEngine();
 let music = null;
 
@@ -281,13 +293,14 @@ async function setMode(mode) {
       renderTabs(); renderChips();
       return;
     }
-    music ??= new MusicMode(engine, $("#music-layer"));
+    if (!music) { music = new MusicMode(engine, $("#music-layer")); music.onLessonChange = renderLesson; }
     applyMusicSettings();
     $("#music-layer").hidden = false;
     if (tutorial.active) { tutorial.stop(); $("#coach").hidden = true; }
     showStatus("Show your hands to play");
   } else {
     music?.deactivate();
+    $("#lesson").hidden = true;
     $("#music-layer").hidden = true;
     $("#music-layer").getContext("2d").clearRect(0, 0, 1e5, 1e5);
   }
@@ -322,6 +335,7 @@ function toggleLoop() {
   renderChips();
 }
 
+let lessonTick = 0;                    // refresh the rhythm lesson card every 6 frames
 const musicLayer = $("#music-layer");
 function drawMusic(t) {
   const w = stage.clientWidth, h = stage.clientHeight, dpr = Math.min(2, devicePixelRatio || 1);
@@ -333,6 +347,86 @@ function drawMusic(t) {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   music.draw({ hands: state.hands, t, accent: settings.color, w, h });
 }
+
+// ---------------- Presets and lessons ----------------
+function applyPreset(pr) {
+  Object.assign(settings, pr.set);
+  saveSettings();
+  applyMusicSettings("instrument");
+  renderChips();
+  flash(`${pr.label}: play along!`);
+}
+
+const STARS_KEY = "tracked.lessonStars";
+function bestStars() { try { return JSON.parse(localStorage.getItem(STARS_KEY) || "{}"); } catch { return {}; } }
+function saveStars(id, n) {
+  const all = bestStars();
+  if ((all[id] ?? 0) >= n) return;
+  all[id] = n;
+  try { localStorage.setItem(STARS_KEY, JSON.stringify(all)); } catch { /* storage blocked */ }
+}
+const starText = (n) => (n ? " " + "★".repeat(n) + "☆".repeat(3 - n) : "");
+
+/** Learn tab: first steps for the current instrument, songs, rhythms and music basics. */
+function renderLessons() {
+  const stars = bestStars();
+  const chip = (label, onClick, cls = "chip") => { const b = el("button", { className: cls }, label); b.addEventListener("click", onClick); return b; };
+  const inst = OPTIONS.instrument.find((o) => o.value === settings.instrument)?.label ?? "";
+  const nodes = [chip(`▶ First steps: ${inst}`, () => startLesson("skill"), "chip lead")];
+  const prefix = settings.instrument === "harp" ? "harp:" : settings.instrument === "theremin" ? "theremin:" : "";
+  for (const song of SONGS) {
+    const id = prefix + song.id;
+    nodes.push(chip(`🎵 ${song.title}${starText(stars[id])}`, () => startLesson("song", id)));
+  }
+  for (const r of RHYTHMS) nodes.push(chip(`🥁 ${r.title}${starText(stars[`rhythm:${r.id}`])}`, () => startLesson("rhythm", r.id)));
+  for (const id of MUSIC_GUIDE_ORDER) nodes.push(chip(`📖 ${MUSIC_GUIDES[id].title}`, () => openGuide(`music:${id}`)));
+  return nodes;
+}
+
+function startLesson(kind, id) {
+  if (!music) return;
+  const want = kind === "skill" ? {} : lessonSettings(kind, id);
+  const changed = Object.entries(want).some(([k, v]) => settings[k] !== v);
+  Object.assign(settings, want);
+  saveSettings();
+  if (changed) applyMusicSettings("instrument");
+  if (kind === "song") {
+    music.startSong(id);
+    const secs = music.previewSong(id);            // hear it first
+    flash(`Listen first… then play it note by note (${Math.round(secs)} s)`);
+  } else if (kind === "rhythm") music.startRhythm(id);
+  else music.startSkills();
+  renderChips();
+}
+
+function renderLesson() {
+  const card = $("#lesson");
+  const v = music?.lessonView();
+  if (!v) { card.hidden = true; return; }
+  card.hidden = false;
+  card.querySelector("h2").textContent = v.title;
+  card.querySelector(".sub").textContent = v.subtitle;
+  card.querySelector(".text").textContent = v.text;
+  card.querySelector(".bar i").style.width = `${Math.round(v.progress * 100)}%`;
+  card.querySelector(".next").replaceChildren(...v.upcoming.map((n, i) => el("span", { className: i === 0 ? "now" : "", textContent: n })));
+  card.querySelector(".stars").textContent = v.finished ? "★".repeat(v.stars) + "☆".repeat(3 - v.stars) : "";
+  card.classList.toggle("done", v.finished);
+  if (v.finished && music.lesson && !music.lesson.saved) {
+    music.lesson.saved = true;
+    const id = music.lesson.kind === "rhythm" ? `rhythm:${music.lesson.id}` : music.lesson.id;
+    saveStars(id, v.stars);
+    buzz(30);
+    renderChips();
+  }
+}
+$("#lesson .restart").addEventListener("click", () => {
+  const L = music?.lesson;
+  if (!L) return;
+  if (L.kind === "song") music.startSong(L.id);
+  else if (L.kind === "rhythm") music.startRhythm(L.id);
+  else music.startSkills();
+});
+$("#lesson .close").addEventListener("click", () => music?.stopLesson());
 
 // ---------------- Face masks ----------------
 // Built-in masks are painted in the face's canonical UV space; "Your mask" is an
@@ -747,6 +841,7 @@ async function start() {
   capture.audioSource = () => (isMusic() && engine.ready ? engine.stream : null);
   if (audioReady && await audioReady) {
     music = new MusicMode(engine, $("#music-layer"));
+    music.onLessonChange = renderLesson;
     applyMusicSettings();
     $("#music-layer").hidden = false;
   } else if (settings.mode === "music") {
@@ -930,7 +1025,7 @@ function updateOnboarding(t) {
 // "make your own" guides (src/guides.js)
 let guideReturn = null; // element to focus again when the guide closes
 function openGuide(id, from = document.activeElement) {
-  const g = GUIDES[id];
+  const g = GUIDES[id] ?? MUSIC_GUIDES[String(id).replace(/^music:/, "")];
   if (!g) return;
   toggleHelp(false);
   const list = (tag, items) => (items?.length ? `<${tag}>${items.map((t) => `<li>${t}</li>`).join("")}</${tag}>` : "");
@@ -1084,6 +1179,7 @@ function renderFrame() {
     // music mode: plain video, the instrument is drawn on its own layer
     renderer.draw(video, { ...fs, quad: null, alpha: 0, faces: [] });
     music.tick(t / 1000);              // loop playback; gestures are handled in onVision
+    if (music.lesson?.kind === "rhythm" && !music.lesson.finished && ++lessonTick % 6 === 0) renderLesson();
     drawMusic(t / 1000);
     capture.afterDraw();
     if (state.debug) drawDebug();

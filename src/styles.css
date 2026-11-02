@@ -145,6 +145,25 @@ video { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: no
 .row { display: flex; gap: 8px; overflow-x: auto; padding: 4px 14px; scrollbar-width: none; align-items: center; }
 .row::-webkit-scrollbar { display: none; }
 
+/* music lesson card */
+#lesson { position: fixed; z-index: 6; border-radius: 20px; padding: 14px 16px; width: min(460px, calc(100% - 24px));
+  left: calc(var(--stage-left, 0px) + var(--stage-w, 100vw) / 2); transform: translateX(-50%);
+  top: calc(var(--stage-top, 0px) + 12px + env(safe-area-inset-top)); }
+#lesson header { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+#lesson h2 { margin: 0; font-size: 18px; font-weight: 600; }
+#lesson .sub { margin: 2px 0 0; font-size: 12px; color: var(--ink-3); }
+#lesson .stars { font-size: 22px; color: #e8b500; letter-spacing: 2px; white-space: nowrap; }
+#lesson .text { margin: 8px 0; font-size: 14px; color: var(--ink-2); line-height: 1.4; }
+#lesson .next { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+#lesson .next span { padding: 4px 9px; border-radius: 8px; background: rgba(20,20,19,.07); font-weight: 600; font-size: 14px; }
+#lesson .next span.now { background: var(--ink); color: var(--lime); }
+#lesson .bar { height: 6px; border-radius: 3px; background: rgba(20,20,19,.1); overflow: hidden; margin-bottom: 10px; }
+#lesson .bar i { display: block; height: 100%; width: 0; background: var(--ink); transition: width .25s ease; }
+#lesson.done .bar i { background: #3ccf63; }
+#lesson .actions { display: flex; gap: 8px; justify-content: flex-end; }
+#lesson .actions .chip { padding: 7px 12px; }
+.chip.lead { background: var(--ink); color: #fff; }
+
 /* Effects | Music mode switch (separate modes, separate tabs) */
 .seg { display: flex; gap: 4px; margin: 2px 14px 4px; padding: 4px; border-radius: 14px; background: rgba(20,20,19,.06); }
 .seg button { flex: 1; border: 0; background: none; padding: 8px 10px; border-radius: 10px; font-size: 14px; font-weight: 600; color: var(--ink-2); }

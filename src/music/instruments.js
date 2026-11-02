@@ -3,6 +3,8 @@
 //
 // Landmarks: 0 wrist, 4 thumb tip, 8 index tip, 12 middle tip, 16 ring tip, 20 pinky tip, 9 middle knuckle.
 
+import { fingerExtended, thumbExtended } from "../gestures.js";
+
 export const TIPS = [8, 12, 16, 20];
 
 const dist = (a, b, aspect = 1) => Math.hypot((a.x - b.x) * aspect, a.y - b.y);
@@ -151,4 +153,65 @@ export function fingertips(hands, which = TIPS) {
     for (const i of which) out.push({ id: `${side}:${i}`, x: lm[i].x, y: lm[i].y });
   });
   return out;
+}
+
+// ---------------- Chords / Arp / Beats / DJ helpers ----------------
+
+/** Extended fingers (index → pinky, plus the thumb as the 5th). 0 = fist. */
+export function fingerCount(lm, aspect = 1) {
+  let n = 0;
+  for (const f of [[5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20]]) if (fingerExtended(lm, f, aspect)) n++;
+  if (n === 4 && thumbExtended(lm, aspect)) n = 5;
+  return n;
+}
+
+/**
+ * Strumming: a fingertip crossing a horizontal line. Down-strums and up-strums
+ * are both reported (guitarists strum both ways).
+ */
+export class StrumLine {
+  constructor(y = 0.55) { this.y = y; this.prev = null; }
+
+  /** @returns {null | {dir: "down"|"up", velocity: number}} */
+  update(tip, dt) {
+    if (!tip) { this.prev = null; return null; }
+    const p = this.prev;
+    this.prev = tip.y;
+    if (p == null || dt <= 0) return null;
+    const crossedDown = p < this.y && tip.y >= this.y, crossedUp = p > this.y && tip.y <= this.y;
+    if (!crossedDown && !crossedUp) return null;
+    return { dir: crossedDown ? "down" : "up", velocity: Math.min(1, 0.3 + Math.abs(tip.y - p) / dt / 3) };
+  }
+
+  reset() { this.prev = null; }
+}
+
+/** Beat-maker grid: rows × cols cells across the picture. */
+export class StepGrid {
+  constructor(rows = ["kick", "snare", "hat", "clap"], cols = 8, area = { x: 0.12, y: 0.18, w: 0.76, h: 0.5 }) {
+    this.rows = rows;
+    this.cols = cols;
+    this.area = area;
+    this.cells = rows.map(() => new Array(cols).fill(false));
+  }
+
+  /** Cell under a point, or null. */
+  cellAt(p) {
+    const { x, y, w, h } = this.area;
+    if (p.x < x || p.x > x + w || p.y < y || p.y > y + h) return null;
+    return { row: Math.min(this.rows.length - 1, Math.floor(((p.y - y) / h) * this.rows.length)), col: Math.min(this.cols - 1, Math.floor(((p.x - x) / w) * this.cols)) };
+  }
+
+  /** @returns {boolean|null} new state of the toggled cell, or null if outside */
+  toggleAt(p) {
+    const c = this.cellAt(p);
+    if (!c) return null;
+    this.cells[c.row][c.col] = !this.cells[c.row][c.col];
+    return this.cells[c.row][c.col];
+  }
+
+  /** Drums to play on a column. */
+  column(col) { return this.rows.filter((_, r) => this.cells[r][col % this.cols]); }
+
+  clear() { this.cells.forEach((r) => r.fill(false)); }
 }

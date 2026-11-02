@@ -116,7 +116,10 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `src/music/instruments.js` | Gesture → note detection: pinch keys (hysteresis), string crossings, pad strikes, theremin |
 | `src/music/looper.js` | Free-length loop recorder |
 | `src/music/audio.js` / `pluck-worklet.js` | Web Audio engine (synth voices, drums, theremin, reverb, echo, limiter, MIDI out) and Karplus-Strong worklet |
-| `src/music/controller.js` | Music mode: hands → instruments → audio, and the on-screen instrument overlay |
+| `src/music/controller.js` | Music mode: hands → instruments → audio, band and lessons, on-screen overlay |
+| `src/music/scheduler.js` | Look-ahead step clock ("A tale of two clocks") |
+| `src/music/band.js` | Backing band: grooves, bass and stabs that follow the progression |
+| `src/music/lessons.js` / `songs.js` / `learn.js` | Wait-mode song lessons, rhythm games, first steps; public-domain melodies; music-basics cards |
 | `src/device.js` | Device profile: mobile/desktop, performance tier, detection size, model cadence |
 | `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
 | `src/geometry.js` | Builds the quad between the two hands |
@@ -159,19 +162,30 @@ Designed after hand-tracking onboarding guidance from [Meta](https://developers.
 - The tracking HUD (D) shows render and tracking fps, latency, render scale and the face/segmentation cadence.
 
 ## Music mode
-A separate mode (switch **Effects → Music** at the top of the panel, or press <kbd>M</kbd>) with its own tabs. The frame, masks and 3D are off, only the hand model runs (lowest latency), and your hands play an instrument. Every sound is synthesised in the browser: no samples, no recordings.
+A separate mode (switch **Effects → Music** at the top of the panel, or press <kbd>M</kbd>) with its own tabs: **Play · Band · Learn · Notes · Mix**. The frame, masks and 3D are off, only the hand model runs (lowest latency), and your hands play an instrument. Every sound is synthesised in the browser: no samples, no recordings.
 
 | Instrument | How to play |
 |---|---|
-| **Theremin** | The right hand's height plays the notes, along on-screen "frets" (one line per scale note). The left hand's height sets the volume. Pitch can be locked to notes, soft-snapped or free-gliding. |
-| **Keys** | Pinch your thumb with a finger: 4 notes per hand, 8 in all, sustained while you hold the pinch. |
-| **Harp** | Sweep a fingertip across 10 vertical strings. Each crossing plucks a string, and speed sets the loudness. Plucks use Karplus-Strong physical modelling in an AudioWorklet. |
-| **Drums** | Six pads (kick, snare, hi-hat, clap, tom, crash). Strike them with a quick downward fingertip tap. Drums are synthesised from oscillators and noise. |
+| **Theremin** | The right hand's height plays the notes along on-screen "frets", the left hand sets the volume. Pitch can be locked, soft-snapped or free. |
+| **Keys** | Pinch your thumb with a finger: 4 notes per hand, sustained while you pinch. |
+| **Harp** | Sweep a fingertip across 10 strings. Speed sets the loudness (Karplus-Strong plucks in an AudioWorklet). |
+| **Drums** | Six pads, struck with a quick downward fingertip tap. |
+| **Chords** | Left hand: show 1 to 4 fingers to pick a chord of the progression. Right index: strum up or down across the line. |
+| **Arp** | Left hand picks the chord, right hand height sets the arpeggio speed (quarters, 8ths, 16ths), locked to the tempo. |
+| **Beats** | 4 × 8 step sequencer: point at a cell with your right index and pinch to switch it on or off. It loops at the tempo. |
+| **DJ** | A house groove plays. Right hand left–right opens a low-pass filter, up adds echo. Pinch your left hand to drop the drums. |
 
-- **Notes tab.** Scale (pentatonic by default, so you can't play a wrong note), key, range, and theremin snapping.
-- **Mix tab.** Reverb (dry, room, hall), echo, and **MIDI output** to a DAW or synth (Web MIDI: Chrome, Edge).
-- **Looper.** Record a phrase, then it loops while you jam on top (<kbd>L</kbd>).
-- **Recording.** Videos recorded in music mode include the sound.
+- **11 sounds.** Glass, E-piano (FM), Marimba (FM), Pluck (Karplus-Strong), Organ (additive), Strings, Brass, Choir (formant "ah"), Synth, Pad, 8-bit.
+- **Band.** An auto-accompaniment (drums, bass, chord stabs) that follows a chord progression in your key. Six styles (Pop, Lo-fi, House, Rock, Reggae, Hip-hop), five progressions (I–V–vi–IV, I–vi–IV–V, vi–IV–I–V, 12-bar blues, I–IV), tempo, metronome, three drum kits (acoustic, electro 808, lo-fi). Everything is scheduled on the audio clock.
+- **Jam presets.** One tap: Chill lo-fi, Pop star, Dance floor, Blues jam, Dreamy, Arcade.
+- **Learn** (for people who have never played):
+  - **First steps.** 3 guided steps for each instrument, each validated by what you actually play.
+  - **Songs in wait mode.** Twinkle Twinkle, Mary Had a Little Lamb, Frère Jacques, Ode to Joy, When the Saints, the C major scale. You hear the song first, then the next note glows and the song waits until you play it. Stars at the end, best score saved. Only public-domain melodies, stored as notes (no lyrics).
+  - **Rhythm games.** A count-in, then rings close onto the pads. Hits are judged perfect, good or missed, with windows sized for webcam tracking.
+  - **Music basics.** Your first minute of music; notes, scales and keys; chords and progressions; rhythm and beats.
+- **Notes.** Scale (pentatonic by default: you can't play a wrong note), key, range, theremin snapping.
+- **Mix.** Reverb, echo, MIDI output to a DAW (Web MIDI).
+- **Looper** (<kbd>L</kbd>) records a phrase and loops it. Videos recorded in music mode include the sound.
 
 ## Robustness and error handling
 Every failure the app can hit in the real world has a defined behaviour, and each one was verified by injecting it in a browser:

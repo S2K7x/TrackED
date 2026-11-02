@@ -14,7 +14,7 @@ Owner: S2K7x (French-speaking; answer in French, keep **all code, UI text, comme
 ## Commands
 ```bash
 npm start    # python3 -m http.server 8000 → http://localhost:8000
-npm test     # node --test tests/*.test.mjs (65 tests, Node 20+)
+npm test     # node --test tests/*.test.mjs (74 tests, Node 20+)
 npm run check  # node --check on every module (also in CI)
 node tools/tune-filter.mjs                                   # One Euro tuning experiment
 /Applications/Blender.app/Contents/MacOS/Blender --background --factory-startup --python tools/blender-reference-head.py -- <canonical_face_model.obj> assets/reference
@@ -44,7 +44,7 @@ node tools/gen-face-mesh.mjs <canonical_face_model.obj> <vision_bundle.mjs> > sr
 | `temporal.js` | Temporal 3-frame vote for the segmentation mask |
 | `onboarding.js` | Tutorial state machine + contextual hints |
 | `errors.js` | Camera error mapping, constraint ladder, upload checks, retry/backoff, failure budget |
-| `music/*` | Music mode (separate from effects): `theory.js` scales, `instruments.js` gesture → notes, `looper.js`, `audio.js` Web Audio engine + MIDI, `pluck-worklet.js` Karplus-Strong, `controller.js` glue + overlay |
+| `music/*` | Music mode (separate from effects, tabs Play, Band, Learn, Notes, Mix): `theory.js` scales and chords, `instruments.js` gesture → notes (8 instruments), `scheduler.js` look-ahead clock, `band.js` auto-accompaniment, `lessons.js` / `songs.js` (public domain only) / `learn.js`, `looper.js`, `audio.js` engine (11 timbres, kits, MIDI), `pluck-worklet.js`, `controller.js` glue + overlay |
 | `device.js` | Device tier → detection size, model cadence, camera resolution |
 | `options.js` | UI options (values must match renderer/faces tables, checked by tests) |
 | `faces.js`, `geometry.js`, `capture.js`, `art.js`, `styles.css`, `mediapipe.js` (pins MediaPipe 1.1.1) | helpers |
@@ -53,6 +53,7 @@ Root: `index.html` (import map for three@0.160.0), `sw.js` (service worker cachi
 
 ## Rules for this project
 - **Original designs only.** Never recreate copyrighted or trademarked characters (Spider-Man, Iron Man, anime characters…) as built-in masks, accessories, textures, Blender models or adapted images. Offer original designs instead. Users may load their own files through "Your mask", "Face swap" or "Your 3D model".
+- Music lessons use **public-domain melodies only**, stored as notes (never lyrics or copyrighted songs).
 - Pure logic goes into small modules with unit tests (`tests/*.test.mjs`). Keep `npm test` green; CI and the auto-merge depend on it.
 - Verify UI changes in headless Chromium with the fake-camera setup (`docs/TESTING.md`). The container has no GPU, so FPS figures there are meaningless.
 - Pin CDN dependency versions (MediaPipe `1.1.1`, three `0.160.0`). If you bump one, bump `sw.js`'s cache `VERSION`.

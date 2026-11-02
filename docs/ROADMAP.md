@@ -6,8 +6,8 @@
 3. ~~Original hero mask~~ (done: **Kitsune**, colour-aware, in `masks.js`). More ideas: oni / hannya-inspired variants, a half mask.
 
 ## Music mode ideas
-- Chord mode (left hand finger count picks the chord, right hand strums), arpeggiator synced to a BPM.
-- Quantised looper (BPM + bars) and multiple loop layers; metronome.
+- Done: Chords, Arp, Beats, DJ modes, Band (6 styles), 11 sounds, presets, Learn (first steps, wait-mode songs, rhythm games, music basics), metronome.
+- Next: quantised looper (snap to the band's bars) and loop layers; falling-notes view for songs; more songs (public domain only); saving / sharing a Beats pattern; swing; chord inversions and voice leading.
 - Velocity from hand depth (world z), vibrato from hand shake on the theremin.
 - MIDI CC output (hand height → filter / mod wheel) and MIDI clock.
 - Audio-reactive visuals in effects mode (the frame pulsing with the music).
@@ -29,7 +29,7 @@
 - Service worker gain on the second launch.
 - Wake lock, haptics, share sheet and Add to Home Screen on phones.
 - Contextual hints (dark, no hands, one hand, too close) with a live camera.
-- Music mode with real hands: pinch thresholds, harp crossing feel, drum strike speed (`minSpeed`), audible latency, Web MIDI with a real DAW, audio in recorded videos (Safari MP4 + AAC).
+- Music mode with real hands (all 8 instruments): finger-count chord picking (`fingerCount` thresholds), strum line feel, beats-grid pinch targeting, DJ filter range, rhythm windows (70/140 ms) and the song lessons' wait mode; pinch thresholds, harp crossing feel, drum strike speed (`minSpeed`), audible latency, Web MIDI with a real DAW, audio in recorded videos (Safari MP4 + AAC).
 
 ## Done (high level)
 Prototype → WebGL2 + worker + One Euro → face filters, segmentation targets, shapes, colours, capture → light frosted-glass redesign in English → phone/desktop layouts, freeze, timer, pinch → face masks, custom masks, face swap → 3D accessories + user `.glb` → display modes (appear & disappear / inside frame / always) → latency prediction, signs, refinement, caching → research-driven robustness (handedness, 3D signs, temporal mask, tuned filter) → error handling and recovery → onboarding (priming, checklist, tutorial, hints, help) → CI + automatic `main` sync → in-app "make your own" guides → music mode (theremin, keys, harp, drums, looper, MIDI, recording with sound) → 3D model fine-tune panel (saved per model) + Blender reference head with "As modelled" anchor.

@@ -23,6 +23,13 @@
 | Music gestures handled in `onVision` (per tracking result), drawing and looper in the render loop | Notes fire as soon as landmarks arrive, and no gesture is missed when rendering is slow |
 | All sounds synthesised (oscillators, noise, Karplus-Strong worklet), no samples | Nothing to download or license; tiny; any pitch |
 | Scale locking by default (pentatonic) + visual guides | Free-air pitch is hard; this way beginners always sound good |
+| Music has 8 instruments and 5 tabs (Play, Band, Learn, Notes, Mix) | Variety for experienced players, a gentle path (presets, Learn) for beginners |
+| Band, arpeggio, sequencer, metronome and rhythm lessons share one **StepClock** with a 25 ms timer and 120 ms look-ahead on the audio clock | Sample-accurate grooves; timer jitter never reaches the sound; resyncs after a frozen tab instead of bursting |
+| Lessons are pure state machines (`lessons.js`); the controller feeds them played events | Unit-testable; the same "feed" serves first steps, songs and rhythm games |
+| Song lessons in **wait mode**; you hear the song first; stars instead of fail states | Beginners learn without stress (as in Synthesia's melody practice) |
+| Rhythm timing windows of 70 / 140 ms | Webcam tracking adds ~33 ms of jitter; tighter windows would feel unfair |
+| Songs: **public-domain melodies only**, notes only | No copyrighted music or lyrics in the app |
+| Chord / arpeggio chords come from the scale's *parent* (pentatonic → major, blues → minor) | Pentatonic scales have no full triads |
 | `npm run check` (`node --check` on every module) in CI before the tests | Catches syntax errors in browser-only files that unit tests never import |
 | `main` auto-updated by GitHub Actions from `claude/**` branches after tests pass | Owner wanted `main` to always be up to date automatically |
 

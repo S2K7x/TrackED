@@ -1,7 +1,7 @@
 # Testing
 
 ## Unit tests
-`npm test` runs `node --test tests/*.test.mjs` (65 tests): music theory, gesture → note detection (pinch keys, string crossings, pad strikes, theremin), looper, music tabs/options, geometry, 3D model fit (clamping, model key, per-model store), One Euro + prediction, faces, options ↔ renderer consistency, ready-made model files present, every mask option has a painter, Kitsune/Aero exclusivity, guides (coverage, markup, real labels and limits), capture MIME, device profile, mesh data, gestures (2D + 3D), mask stabilizer, error helpers, onboarding. CI runs them on `main`, PRs and every `claude/**` push (which then auto-merges into `main`).
+`npm test` runs `node --test tests/*.test.mjs` (74 tests): music theory, chords/progressions, songs fit the keys, step clock, band grooves, song/rhythm/skill lessons, strum line, step grid, music guides,, gesture → note detection (pinch keys, string crossings, pad strikes, theremin), looper, music tabs/options, geometry, 3D model fit (clamping, model key, per-model store), One Euro + prediction, faces, options ↔ renderer consistency, ready-made model files present, every mask option has a painter, Kitsune/Aero exclusivity, guides (coverage, markup, real labels and limits), capture MIME, device profile, mesh data, gestures (2D + 3D), mask stabilizer, error helpers, onboarding. CI runs them on `main`, PRs and every `claude/**` push (which then auto-merges into `main`).
 
 ## Browser tests (headless Chromium with a fake camera)
 Playwright and Chromium are pre-installed in the cloud container (`require('playwright')`, don't reinstall).
@@ -18,7 +18,7 @@ Playwright and Chromium are pre-installed in the cloud container (`require('play
 ### Music mode
 - Add `--autoplay-policy=no-user-gesture-required` to the Chromium flags so the AudioContext runs headless.
 - Switch modes with `#modes button:has-text("Music")` (or `window.__tracked.setMode("music")`). The hook also exposes `music` and `engine`.
-- Set `__tracked.tracker.onResult = () => {}` so real tracking doesn't overwrite injected hands, wrap `engine.noteOn` / `engine.drum` to count events, and feed hands with `onVision({ hands })`. Notes are triggered in `onVision`, so every injected result counts.
+- Set `__tracked.tracker.onResult = () => {}` so real tracking doesn't overwrite injected hands, wrap `engine.noteOn` / `engine.drum` to count events, and feed hands with `onVision({ hands })`. Notes are triggered in `onVision`, so every injected result counts. Count `when`-scheduled notes to check the band, arp and sequencer (they run on the StepClock). `window.__fingers(cx, n)` in `test15.js`-style scripts builds a hand with n extended fingers for Chords and Arp.
 
 ### Caveats
 - No GPU: rendering runs at 1 to 7 fps and models load slowly (10 s or more). Never report those FPS as real performance.
