@@ -14,6 +14,7 @@
 | 3D model fine-tune = an extra "fit" group between the reveal pop-in scale and the auto-fit, rotating around the anchor point | Live slider updates without rebuilding the model; the reveal animation keeps working |
 | Fits stored per model, keyed by size + FNV-1a of the first and last 128 kB | Same file → same fit after reload, without hashing a 60 MB file; at most 20 models kept |
 | Blender reference head in **metres, Z up, facing −Y**; "As modelled" anchor scales ×100 and skips the auto-fit | Blender's default units and glTF exporter (+Y up) give back MediaPipe's canonical space exactly (checked: exported bounds = canonical ÷ 100) |
+| Blender models built by **scripts run in background Blender** (`tools/blender-*.py`) | Reproducible and reviewable; works even when the live Blender MCP connection (port 9876) isn't running |
 | One-hand signs from landmark geometry instead of MediaPipe Gesture Recognizer | Avoids a second model; signs are only read with one hand visible so they never clash with the frame |
 | `main` auto-updated by GitHub Actions from `claude/**` branches after tests pass | Owner wanted `main` to always be up to date automatically |
 
