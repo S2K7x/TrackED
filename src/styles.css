@@ -236,17 +236,31 @@ video { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: no
 
 #hint { bottom: calc(var(--sheet-h, 150px) + 60px + env(safe-area-inset-bottom)); white-space: normal; max-width: min(460px, calc(100% - 32px)); }
 
-#helpPanel { position: fixed; z-index: 9; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(720px, calc(100% - 24px));
+#helpPanel, #guidePanel { position: fixed; z-index: 9; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(720px, calc(100% - 24px));
   max-height: calc(100% - 40px); overflow: auto; border-radius: 26px; padding: 22px; background: var(--glass-strong);
   box-shadow: var(--shadow), 0 0 0 100vmax rgba(20, 20, 15, .28); /* dims everything behind the panel */ }
-#helpPanel header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-#helpPanel h2 { margin: 0; font-size: 24px; font-weight: 400; }
-#helpPanel .close { border: 0; background: rgba(20,20,19,.06); box-shadow: none; }
-#helpPanel .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 16px; }
-#helpPanel article { background: rgba(255,255,255,.7); border-radius: 16px; padding: 12px 14px; }
-#helpPanel article b { font-weight: 600; font-size: 14px; }
-#helpPanel article p { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); line-height: 1.45; }
-#helpPanel kbd { font: inherit; font-weight: 600; padding: 0 5px; border-radius: 5px; background: rgba(20,20,19,.08); color: var(--ink); }
+#helpPanel header, #guidePanel header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+#helpPanel h2, #guidePanel h2 { margin: 0; font-size: 24px; font-weight: 400; }
+#helpPanel .close, #guidePanel .close { border: 0; background: rgba(20,20,19,.06); box-shadow: none; }
+#helpPanel .grid, #guidePanel .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 16px; }
+#helpPanel article, #guidePanel article { background: rgba(255,255,255,.7); border-radius: 16px; padding: 12px 14px; }
+#helpPanel article b, #guidePanel article b { font-weight: 600; font-size: 14px; }
+#helpPanel article p, #guidePanel article p { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); line-height: 1.45; }
+#helpPanel kbd, #guidePanel kbd { font: inherit; font-weight: 600; padding: 0 5px; border-radius: 5px; background: rgba(20,20,19,.08); color: var(--ink); }
+#guidePanel .intro { margin: 0 0 14px; color: var(--ink-2); font-size: 15px; line-height: 1.45; }
+#guidePanel section { background: rgba(255,255,255,.7); border-radius: 16px; padding: 12px 16px; margin-bottom: 10px; }
+#guidePanel h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+#guidePanel ol, #guidePanel ul { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+#guidePanel li + li { margin-top: 4px; }
+#guidePanel ol + ul { margin-top: 8px; }
+#guidePanel ul li::marker { color: var(--ink-3); }
+#guidePanel b { color: var(--ink); font-weight: 600; }
+#guidePanel kbd { font: inherit; font-weight: 600; padding: 0 5px; border-radius: 5px; background: rgba(20,20,19,.08); color: var(--ink); }
+#guidePanel .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+#helpPanel .guide-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+#helpPanel .guide-links .chip { padding: 7px 11px; font-size: 13px; }
+.chip.guide { gap: 6px; }
+.chip.guide svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; }
 .is-mobile #helpPanel .desk { display: none; }
 
 /* visible keyboard focus everywhere (accessibility) */

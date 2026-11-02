@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OPTIONS, TABS, DEFAULTS, PANEL_GROUPS, hexToRgb } from "../src/options.js";
+import { OPTIONS, TABS, DEFAULTS, PANEL_GROUPS, EXCLUSIVE, exclusiveConflicts, hexToRgb } from "../src/options.js";
 import { EFFECTS, FACE_FX, SHAPES, BORDERS } from "../src/renderer.js";
 import { TARGETS } from "../src/faces.js";
 import { pickMime } from "../src/capture.js";
@@ -31,6 +31,17 @@ test("ready-made 3D models exist and aren't built-in primitive accessories", asy
 test("every built-in mask option has a painter", async () => {
   const { MASKS } = await import("../src/masks.js");
   for (const o of OPTIONS.mask) if (o.value !== "none" && !o.upload) assert.ok(MASKS.includes(o.value), o.value);
+});
+
+test("Kitsune and the Aero helmet are never worn together", () => {
+  for (const pair of EXCLUSIVE) for (const [k, v] of pair) assert.ok(OPTIONS[k].some((o) => o.value === v), `${k}: ${v}`);
+  assert.deepEqual(exclusiveConflicts({ mask: "none", accessory: "aero" }, "mask", "kitsune"),
+    [{ key: "accessory", value: "none", label: "Aero helmet" }]);
+  assert.deepEqual(exclusiveConflicts({ mask: "kitsune", accessory: "none" }, "accessory", "aero"),
+    [{ key: "mask", value: "none", label: "Kitsune" }]);
+  assert.deepEqual(exclusiveConflicts({ mask: "skull", accessory: "aero" }, "mask", "kitsune").length, 1);
+  assert.deepEqual(exclusiveConflicts({ mask: "kitsune", accessory: "crown" }, "accessory", "halo"), []);
+  assert.deepEqual(exclusiveConflicts({ mask: "none", accessory: "aero" }, "mask", "gold"), []);
 });
 
 test("hexToRgb", () => {

@@ -135,6 +135,31 @@ export const TABS = [
   { id: "more", label: "More", groups: ["timer", "gesture", "signs"] },
 ];
 
+/**
+ * Options that are never worn together: picking one switches the other off.
+ * (Kitsune and the Aero helmet are two different looks.)
+ */
+export const EXCLUSIVE = [
+  [["mask", "kitsune"], ["accessory", "aero"]],
+];
+
+/**
+ * Settings to switch off after `key` becomes `value`.
+ * @returns {{key: string, value: string, label: string}[]} e.g. [{ key: "accessory", value: "none", label: "Aero helmet" }]
+ */
+export function exclusiveConflicts(settings, key, value) {
+  const out = [];
+  for (const pair of EXCLUSIVE) {
+    pair.forEach(([k, v], i) => {
+      const [ok, ov] = pair[1 - i];
+      if (k === key && v === value && settings[ok] === ov) {
+        out.push({ key: ok, value: "none", label: OPTIONS[ok].find((o) => o.value === ov)?.label ?? ov });
+      }
+    });
+  }
+  return out;
+}
+
 /** Tab groups drawn by custom UI (sliders) instead of OPTIONS chips. */
 export const PANEL_GROUPS = ["fit"];
 

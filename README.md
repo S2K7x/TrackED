@@ -58,7 +58,7 @@ The bottom sheet has five tabs:
 |---|---|
 | **Effect** | None, Neon, Tint, Thermal, Cartoon, Glitch, Pixel, Kaleido, Loupe ×2, Invert, Mono, Image (plus your own image) |
 | **Face** | Big eyes, Big mouth, Alien, Balloon head, Tiny face, Swirl, Laser eyes, Anonymize. Applied to **everyone**, **me** (the closest face) or **others** (up to 4 faces), and only while they are inside the frame |
-| **Mask** | Face masks that follow your face in 3D: Wireframe, Visor, Skull, Gold, Feline, War paint, Kitsune (a porcelain fox mask inspired by the Japanese folk tradition: eye wings, forehead ears, flaming jewel and cheek flames in your colour) (all original designs), **Your mask** (any image painted on the downloadable template) and **Face swap** (pick a photo: its face is mapped onto yours with live lighting). Three display modes (shared with 3D): **Appear & disappear**, **Inside the frame** or **Always on** (see below) |
+| **Mask** | Face masks that follow your face in 3D: Wireframe, Visor, Skull, Gold, Feline, War paint, Kitsune (a porcelain fox mask inspired by the Japanese folk tradition: eye wings, forehead ears, flaming jewel and cheek flames in your colour) (all original designs; Kitsune and the Aero helmet are never worn together, picking one switches the other off), **Your mask** (any image painted on the downloadable template) and **Face swap** (pick a photo: its face is mapped onto yours with live lighting). Three display modes (shared with 3D): **Appear & disappear**, **Inside the frame** or **Always on** (see below) |
 | **3D** | 3D accessories locked to your head pose: Crown, Halo, Shades, Horns, Party hat, Mohawk, Cat ears (original models built from primitives), **Aero helmet** (an original Blender model, downloaded on first use), or **your own `.glb` model** placed on the head, on the eyes, around the head or **as modelled** on the Blender reference head, at 75 to 150% size, then fine-tuned with sliders (offset, rotation, scale; saved per model) |
 | **Target** | Limits the colour effect to: Everything, People, Background, Skin, Hair or Clothes (person segmentation) |
 | **Shape** | Rectangle, Rounded, Ellipse, Circle, Heart, Star, Diamond |
@@ -104,6 +104,7 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `tools/gen-face-mesh.mjs` | Generator for the mesh data |
 | `src/three-layer.js` | three.js layer: head pose, camera, occluder, pose smoothing, user models |
 | `src/accessories.js` | Built-in 3D accessories |
+| `src/guides.js` | In-app "make your own" guides, one per customisable tab |
 | `src/model-fit.js` | Fine-tune values for "Your 3D model", clamping and per-model storage |
 | `src/gestures.js` | One-hand sign classifier (👍 ✌️ 🖐) and hold debouncing |
 | `sw.js` | Service worker: model / library caching, offline |
@@ -135,6 +136,7 @@ Designed after hand-tracking onboarding guidance from [Meta](https://developers.
 - **Startup checklist.** "Camera" and "Hand tracking model" each show loading, ready or failed, so a slow first model download never looks like a frozen app.
 - **Learn by doing.** Each tutorial step shows a neutral line-art hand animation, stays until you actually perform the gesture (validated from live tracking), then confirms with "Nice!". It can be skipped, is remembered, and can be replayed from the help panel.
 - **Contextual hints** (after the tutorial, one at a time, with a cooldown): too dark (measured camera brightness), no hands for 6 s, only one hand for 5 s, hands too close.
+- **Make-your-own guides.** Every customisable tab (Effect, Mask, 3D, Color) has a **Guide** chip that opens step-by-step instructions for a perfect result with your own image, mask, face swap, 3D model or colour (template rules, export settings, size limits, Blender workflow). The Help panel links to all of them. Content lives in `src/guides.js`.
 - **Help panel** (`?`): the frame, signs, masks and 3D, keyboard, tracking tips and capture, plus a "Replay the tutorial" button.
 - **Accessibility.** Visible keyboard focus everywhere, labelled icon buttons, `aria-live` regions for status and tutorial, dialog semantics, and `prefers-reduced-motion` turns animations off.
 

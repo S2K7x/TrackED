@@ -4,12 +4,13 @@ import { PointsFilter, OneEuro } from "./one-euro.js";
 import { paintMask, templateBlob } from "./masks.js";
 import { quadFromHands, quadArea, mirrorLandmarks, faceInFrame } from "./geometry.js";
 import { mirrorFace, selectFaces, TARGETS } from "./faces.js";
-import { OPTIONS, TABS, DEFAULTS, hexToRgb } from "./options.js";
+import { OPTIONS, TABS, DEFAULTS, hexToRgb, exclusiveConflicts } from "./options.js";
 import { Capture } from "./capture.js";
 import { drawSpark, drawWaves } from "./art.js";
 import { deviceProfile } from "./device.js";
 import { classifySign, SignHold } from "./gestures.js";
 import { Tutorial, STEPS, pickHint, HINTS } from "./onboarding.js";
+import { GUIDES, GUIDE_CHIP } from "./guides.js";
 import { FIT_FIELDS, DEFAULT_FIT, FitStore, modelKey, clampFit, isDefaultFit } from "./model-fit.js";
 import { describeCameraError, constraintLadder, checkUpload, fitTextureSize, FailureBudget } from "./errors.js";
 
@@ -78,6 +79,7 @@ function loadSettings() {
       const valid = k === "color" ? /^#[0-9a-f]{6}$/i.test(saved[k]) : OPTIONS[k]?.some((o) => o.value === saved[k]);
       if (valid) s[k] = saved[k];
     }
+    for (const c of exclusiveConflicts(s, "mask", s.mask)) s[c.key] = c.value; // saved before the rule existed
     return s;
   } catch {
     return { ...DEFAULTS };
@@ -123,6 +125,13 @@ function renderChips() {
     g.append(el("h3", { className: "group-title", textContent: GROUP_TITLES[group] }), ...items);
     nodes.push(g);
   });
+  // "make your own" guide, in the first group of every customisable tab
+  if (GUIDES[activeTab]) {
+    const b = el("button", { className: "chip guide" },
+      `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17v.01"/></svg>${GUIDE_CHIP[activeTab]}`);
+    b.addEventListener("click", () => openGuide(activeTab));
+    nodes.find((n) => n.classList?.contains("group"))?.append(b);
+  }
   chipsEl.replaceChildren(...nodes);
   chipsEl.querySelector(".on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
@@ -201,7 +210,15 @@ function renderGroup(group) {
 
 function set(key, value, rerender = true) {
   if (key === "effect" && value !== settings[key]) onboard.effectChanges++;
+  const conflicts = exclusiveConflicts(settings, key, value);
   settings[key] = value;
+  for (const c of conflicts) {
+    settings[c.key] = c.value;
+    if (c.key === "mask") applyMask();
+    if (c.key === "accessory") applyAccessory();
+    const picked = OPTIONS[key].find((o) => o.value === value)?.label ?? value;
+    flash(`${c.label} switched off: ${picked} and ${c.label} are worn separately`);
+  }
   saveSettings();
   if (key === "color") document.documentElement.style.setProperty("--pick", value);
   if (key === "mask" || (key === "color" && COLORED_MASKS.has(settings.mask))) applyMask();
@@ -589,6 +606,7 @@ addEventListener("keydown", (e) => {
   else if (e.key === "d" || e.key === "D") $("#debug").click();
   else if (e.key === "f" || e.key === "F") toggleFreeze();
   else if (e.key === "?") toggleHelp();
+  else if (e.key === "Escape" && !$("#guidePanel").hidden) closeGuide();
   else if (e.key === "Escape" && !$("#helpPanel").hidden) toggleHelp(false);
   else if (e.key === "Escape" && countdownTimer) cancelCountdown();
   else return;
@@ -787,6 +805,42 @@ function updateOnboarding(t) {
     hintTimer = setTimeout(() => { $("#hint").hidden = true; }, 5000);
   }
 }
+
+// "make your own" guides (src/guides.js)
+let guideReturn = null; // element to focus again when the guide closes
+function openGuide(id, from = document.activeElement) {
+  const g = GUIDES[id];
+  if (!g) return;
+  toggleHelp(false);
+  const list = (tag, items) => (items?.length ? `<${tag}>${items.map((t) => `<li>${t}</li>`).join("")}</${tag}>` : "");
+  const body = $("#guidePanel .body");
+  body.innerHTML = `<p class="intro">${g.intro}</p>` + g.sections.map((s) =>
+    `<section><h3>${s.heading}</h3>${list("ol", s.steps)}${list("ul", s.tips)}</section>`).join("");
+  const actions = el("div", { className: "actions" });
+  if (id === "mask") {
+    const tpl = el("button", { className: "chip" }, "Download mask template");
+    tpl.addEventListener("click", downloadTemplate);
+    actions.append(tpl);
+  }
+  if (id === "3d") actions.append(el("a", { className: "chip", href: "assets/reference/tracked-reference-head.blend", download: "" }, "Download Blender head"));
+  if (actions.childElementCount) body.append(actions);
+  $("#guideTitle").textContent = g.title;
+  $("#guidePanel").hidden = false;
+  $("#guidePanel").scrollTop = 0;
+  guideReturn = from;
+  $("#guidePanel .close").focus();
+}
+function closeGuide() {
+  if ($("#guidePanel").hidden) return;
+  $("#guidePanel").hidden = true;
+  guideReturn?.focus?.();
+}
+$("#guidePanel .close").addEventListener("click", closeGuide);
+$("#helpPanel .guide-links").append(...Object.entries(GUIDES).map(([id, g]) => {
+  const b = el("button", { className: "chip", textContent: g.link });
+  b.addEventListener("click", () => openGuide(id, $("#help")));
+  return b;
+}));
 
 // help panel
 function toggleHelp(open = $("#helpPanel").hidden) {
