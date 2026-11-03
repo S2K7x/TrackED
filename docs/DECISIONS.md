@@ -29,6 +29,10 @@
 | Song lessons in **wait mode**; you hear the song first; stars instead of fail states | Beginners learn without stress (as in Synthesia's melody practice) |
 | Rhythm timing windows of 70 / 140 ms | Webcam tracking adds ~33 ms of jitter; tighter windows would feel unfair |
 | Songs: **public-domain melodies only**, notes only | No copyrighted music or lyrics in the app |
+| "Your melody" imports stay on the device (localStorage, notes only, max 20 songs × 200 notes) | Users may learn any tune they own, as with "Your mask"; the app never ships or uploads it, and lyrics / audio are never kept |
+| Import formats: MIDI, audio (one voice or instrument), mic recording, typed notes. **No full-mix transcription** | MIDI is exact. Monophonic YIN (pure JS, no model download, ~0.1 s for 4 s of audio) is reliable for humming and solo instruments. Polyphonic models (Spotify Basic Pitch) need TensorFlow.js and still don't isolate the sung melody from a mix |
+| Imported tunes are moved to C major / C minor; the key is the one that leaves the fewest notes off-scale, Krumhansl–Schmuckler breaks ties | The instruments play a scale from C (`lessonSettings`). K-S alone picked C# minor for a tune in A major, and snapping then changed real notes (bug found in the browser test) |
+| Imported tunes are folded into the instrument at lesson start (`fitToNotes`: best octave, then octave folding) | Keys have 8 notes, harp 10, theremin 15: one stored melody works on all three |
 | Chord / arpeggio chords come from the scale's *parent* (pentatonic → major, blues → minor) | Pentatonic scales have no full triads |
 | `npm run check` (`node --check` on every module) in CI before the tests | Catches syntax errors in browser-only files that unit tests never import |
 | `main` auto-updated by GitHub Actions from `claude/**` branches after tests pass | Owner wanted `main` to always be up to date automatically |

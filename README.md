@@ -120,6 +120,7 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `src/music/scheduler.js` | Look-ahead step clock ("A tale of two clocks") |
 | `src/music/band.js` | Backing band: grooves, bass and stabs that follow the progression |
 | `src/music/lessons.js` / `songs.js` / `learn.js` | Wait-mode song lessons, rhythm games, first steps; public-domain melodies; music-basics cards |
+| `src/music/melody-import.js` | "Your melody": MIDI parser + melody-track pick + skyline, YIN pitch tracking and note segmentation, typed notes, key finding, fit to the instrument |
 | `src/device.js` | Device profile: mobile/desktop, performance tier, detection size, model cadence |
 | `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
 | `src/geometry.js` | Builds the quad between the two hands |
@@ -181,6 +182,7 @@ A separate mode (switch **Effects → Music** at the top of the panel, or press 
 - **Learn** (for people who have never played):
   - **First steps.** 3 guided steps for each instrument, each validated by what you actually play.
   - **Songs in wait mode.** Twinkle Twinkle, Mary Had a Little Lamb, Frère Jacques, Ode to Joy, When the Saints, the C major scale. You hear the song first, then the next note glows and the song waits until you play it. Stars at the end, best score saved. Only public-domain melodies, stored as notes (no lyrics).
+  - **Your melody.** Found a tune you like? Press **＋ Your melody** and import it as a **MIDI file** (exact notes; the melody track is picked for you), an **audio file** of one voice or instrument, a **recording** (hum, sing or whistle it, up to 20 s), or **type the notes** (`C D E:2 -` or `do ré mi`). TrackED finds the key, moves the tune to C so it fits the instrument, and teaches it in wait mode like the built-in songs. Only the notes are kept, in this browser; nothing is uploaded. Full songs with a band can't be transcribed yet (see `docs/ROADMAP.md`).
   - **Rhythm games.** A count-in, then rings close onto the pads. Hits are judged perfect, good or missed, with windows sized for webcam tracking.
   - **Music basics.** Your first minute of music; notes, scales and keys; chords and progressions; rhythm and beats.
 - **Notes.** Scale (pentatonic by default: you can't play a wrong note), key, range, theremin snapping.
