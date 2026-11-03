@@ -11,6 +11,7 @@ import { Capture } from "./capture.js";
 import { AudioEngine } from "./music/audio.js";
 import { MusicMode, lessonSettings, SONGS, RHYTHMS } from "./music/controller.js";
 import { MUSIC_GUIDES, MUSIC_GUIDE_ORDER } from "./music/learn.js";
+import { melodyFileKind, parseMidi, midiMelody, trackPitch, segmentNotes, guessBeat, notesToSteps, parseNoteText, makeCustomSong, loadCustomSongs, addCustomSong, MELODY_LIMITS } from "./music/melody-import.js";
 import { drawSpark, drawWaves } from "./art.js";
 import { deviceProfile } from "./device.js";
 import { classifySign, SignHold } from "./gestures.js";
@@ -287,6 +288,8 @@ function set(key, value, rerender = true) {
 const MUSIC_KEYS = new Set(["instrument", "sound", "scale", "root", "octave", "snap", "reverb", "echo", "midi", "style", "progression", "tempo", "metronome", "kit"]);
 const engine = new AudioEngine();
 let music = null;
+const MELODY_KEY = "tracked.customSongs";   // "Your melody" imports (see openMelodyImport)
+let customSongs = (() => { try { return loadCustomSongs(localStorage.getItem(MELODY_KEY)); } catch { return []; } })();
 
 async function setMode(mode) {
   if (mode === settings.mode) return;
@@ -313,7 +316,7 @@ async function setMode(mode) {
     $("#power-layer").hidden = true;
   }
   if (mode === "music") {
-    if (!music) { music = new MusicMode(engine, $("#music-layer")); music.onLessonChange = renderLesson; }
+    if (!music) { music = new MusicMode(engine, $("#music-layer")); music.onLessonChange = renderLesson; music.customSongs = customSongs; }
     applyMusicSettings();
     $("#music-layer").hidden = false;
     showStatus("Show your hands to play");
@@ -479,6 +482,11 @@ function renderLessons() {
     const id = prefix + song.id;
     nodes.push(chip(`🎵 ${song.title}${starText(stars[id])}`, () => startLesson("song", id)));
   }
+  for (const song of customSongs) {
+    const id = prefix + song.id;
+    nodes.push(chip(`🎼 ${song.title}${starText(stars[id])}`, () => startLesson("song", id)));
+  }
+  nodes.push(chip("＋ Your melody", () => openMelodyImport()));
   for (const r of RHYTHMS) nodes.push(chip(`🥁 ${r.title}${starText(stars[`rhythm:${r.id}`])}`, () => startLesson("rhythm", r.id)));
   for (const id of MUSIC_GUIDE_ORDER) nodes.push(chip(`📖 ${MUSIC_GUIDES[id].title}`, () => openGuide(`music:${id}`)));
   return nodes;
@@ -486,7 +494,7 @@ function renderLessons() {
 
 function startLesson(kind, id) {
   if (!music) return;
-  const want = kind === "skill" ? {} : lessonSettings(kind, id);
+  const want = kind === "skill" ? {} : lessonSettings(kind, id, kind === "song" ? music.findSong(id) : null);
   const changed = Object.entries(want).some(([k, v]) => settings[k] !== v);
   Object.assign(settings, want);
   saveSettings();
@@ -528,6 +536,160 @@ $("#lesson .restart").addEventListener("click", () => {
   else music.startSkills();
 });
 $("#lesson .close").addEventListener("click", () => music?.stopLesson());
+
+// ---------------- Your melody (Learn tab) ----------------
+// Import a tune (MIDI, audio, humming or typed notes) and learn it in wait mode.
+// Pure logic and the research behind it: src/music/melody-import.js.
+function saveCustomSongs() {
+  try { localStorage.setItem(MELODY_KEY, JSON.stringify(customSongs.map(({ snapped, truncated, ...s }) => s))); } catch { /* storage blocked */ }
+  if (music) music.customSongs = customSongs;
+}
+
+let melodyRec = null;   // {recorder, cancel()} while recording from the mic
+let melodyBusy = false;
+
+function openMelodyImport() {
+  openGuide("music:melody");
+  const body = $("#guidePanel .body");
+  const status = el("p", { className: "status", role: "status" });
+  const say = (msg, bad = false) => { status.textContent = msg; status.classList.toggle("bad", bad); };
+  const title = el("input", { type: "text", maxLength: MELODY_LIMITS.titleLength, placeholder: "Name (optional)", className: "field" });
+
+  const file = el("label", { className: "chip upload" }, `Pick a file<input type="file" accept=".mid,.midi,.kar,audio/*">`);
+  file.querySelector("input").addEventListener("change", async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    const k = melodyFileKind(f);
+    if (k.error) return say(k.error, true);
+    await importMelody(() => (k.kind === "midi" ? fromMidi(f) : f.arrayBuffer().then((b) => fromAudio(b, say))), title.value || f.name, say);
+  });
+
+  const rec = el("button", { className: "chip" }, `🎤 Record (up to ${MELODY_LIMITS.recordSeconds} s)`);
+  rec.addEventListener("click", () => toggleMelodyRecording(rec, title, say));
+
+  const typed = el("textarea", { className: "field", rows: 2, placeholder: "C D E C  ·  do ré mi do  ·  E:2 = 2 beats  ·  - = rest" });
+  const add = el("button", { className: "chip" }, "Learn these notes");
+  add.addEventListener("click", () => {
+    const { notes, errors } = parseNoteText(typed.value);
+    if (errors.length) return say(`Not a note: ${errors.slice(0, 3).join(", ")}`, true);
+    importMelody(async () => ({ steps: notes, source: "text", bpm: 90 }), title.value, say);
+  });
+
+  const sec = (heading, tip, ...nodes) => {
+    const n = el("section", {}, `<h3>${heading}</h3>`);
+    const row = el("div", { className: "actions" });
+    row.append(...nodes);
+    n.append(row);
+    if (tip) n.append(el("p", { className: "tip" }, tip));
+    return n;
+  };
+  const list = el("section", {}, "<h3>Your melodies</h3>");
+  const renderList = () => {
+    list.hidden = !customSongs.length;
+    list.querySelectorAll(".mine").forEach((n) => n.remove());
+    for (const song of customSongs) {
+      const row = el("div", { className: "actions mine" });
+      const play = el("button", { className: "chip", textContent: `▶ ${song.title}` });
+      play.addEventListener("click", () => { closeGuide(); startLesson("song", song.id); });
+      const del = el("button", { className: "chip", textContent: "Delete", ariaLabel: `Delete ${song.title}` });
+      del.addEventListener("click", () => { customSongs = customSongs.filter((s) => s.id !== song.id); saveCustomSongs(); renderList(); renderChips(); });
+      row.append(play, del);
+      list.append(row);
+    }
+  };
+  renderList();
+  const nameRow = el("div", { className: "actions" });
+  nameRow.append(title);
+  body.append(
+    nameRow, status,
+    sec("From a file", "<b>MIDI</b> gives exact notes. <b>Audio</b> works with one voice or one instrument; a full song with a band confuses it.", file),
+    sec("Hum, sing or whistle it", "Use headphones or turn the band off, then hum one note per syllable (\"da da da\").", rec),
+    sec("Type the notes", null, typed, add),
+    list,
+  );
+}
+
+async function importMelody(load, name, say) {
+  if (melodyBusy) return;
+  melodyBusy = true;
+  try {
+    say("Reading the melody…");
+    const { steps, source, bpm, note } = await load();
+    const song = makeCustomSong(steps, { title: name, source, bpm });
+    customSongs = addCustomSong(customSongs, song);
+    saveCustomSongs();
+    renderChips();
+    closeGuide();
+    startLesson("song", (settings.instrument === "harp" ? "harp:" : settings.instrument === "theremin" ? "theremin:" : "") + song.id);
+    const extra = [note, song.truncated && `first ${song.notes.length} notes kept`, song.snapped && `${song.snapped} note${song.snapped > 1 ? "s" : ""} simplified to fit the scale`].filter(Boolean);
+    flash(`${song.notes.length} notes · ${song.origin.split("· ").pop()}${extra.length ? " · " + extra.join(" · ") : ""}`);
+  } catch (err) {
+    say(err?.message || "Could not read that melody.", true);
+  } finally {
+    melodyBusy = false;
+  }
+}
+
+async function fromMidi(f) {
+  const parsed = parseMidi(await f.arrayBuffer());
+  const mel = midiMelody(parsed);
+  return { steps: notesToSteps(mel.notes, mel.beatSec), source: "midi", bpm: parsed.bpm, note: mel.trackName ? `track "${mel.trackName}"` : "" };
+}
+
+/** Decodes audio to mono at ~22 kHz, then pitch-tracks it (YIN). */
+async function fromAudio(bytes, say) {
+  let ctx;
+  try { ctx = new OfflineAudioContext(1, 1, 22050); } catch { ctx = engine.ctx ?? new AudioContext(); }
+  let buf;
+  try { buf = await ctx.decodeAudioData(bytes); } catch { throw new Error("This browser can't decode that audio file. Try MP3 or WAV."); }
+  const max = Math.round(MELODY_LIMITS.audioSeconds * buf.sampleRate);
+  const step = buf.sampleRate > 30000 ? 2 : 1;          // fallback context at 44.1/48 kHz: halve it
+  const n = Math.floor(Math.min(buf.length, max) / step);
+  const x = new Float32Array(n);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < n; i++) for (let k = 0; k < step; k++) x[i] += d[i * step + k] / (buf.numberOfChannels * step);
+  }
+  const pitch = await trackPitch(x, buf.sampleRate / step, { onProgress: (p) => say(`Listening… ${Math.round(p * 100)}%`) });
+  const notes = segmentNotes(pitch);
+  if (!notes.length) throw new Error("No clear notes heard. Try a louder, cleaner recording of one voice or instrument.");
+  const beat = guessBeat(notes);
+  return { steps: notesToSteps(notes, beat, 0.5), source: "audio", bpm: 60 / beat, note: buf.length > max ? `first ${MELODY_LIMITS.audioSeconds} s used` : "" };
+}
+
+async function toggleMelodyRecording(btn, title, say) {
+  if (melodyRec) { melodyRec.recorder.stop(); return; }
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") return say("Recording isn't supported in this browser. Import an audio file instead.", true);
+  let stream;
+  say("Waiting for the microphone…");
+  try {
+    // raw mic: noise suppression and AGC smear pitch and loudness
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch (err) {
+    return say(err?.name === "NotAllowedError" ? "Microphone access was blocked. Allow it in the browser to record." : "No microphone found.", true);
+  }
+  const chunks = [], recorder = new MediaRecorder(stream);
+  let cancelled = false;
+  const timer = setTimeout(() => recorder.state === "recording" && recorder.stop(), MELODY_LIMITS.recordSeconds * 1000);
+  const label = btn.textContent;
+  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  recorder.onstop = async () => {
+    clearTimeout(timer);
+    stream.getTracks().forEach((t) => t.stop());
+    melodyRec = null;
+    btn.textContent = label;
+    btn.classList.remove("on");
+    if (cancelled || !chunks.length) return;
+    const bytes = await new Blob(chunks, { type: recorder.mimeType }).arrayBuffer();
+    importMelody(() => fromAudio(bytes, say), title.value || "My hummed tune", say);
+  };
+  melodyRec = { recorder, cancel: () => { cancelled = true; if (recorder.state === "recording") recorder.stop(); } };
+  recorder.start();
+  btn.textContent = "■ Stop and learn it";
+  btn.classList.add("on");
+  say("Recording… hum your melody, then press Stop.");
+}
 
 // ---------------- Face masks ----------------
 // Built-in masks are painted in the face's canonical UV space; "Your mask" is an
@@ -948,6 +1110,7 @@ async function start() {
   } else if (audioReady && await audioReady) {
     music = new MusicMode(engine, $("#music-layer"));
     music.onLessonChange = renderLesson;
+    music.customSongs = customSongs;
     applyMusicSettings();
     $("#music-layer").hidden = false;
   } else if (settings.mode === "music") {
@@ -1154,6 +1317,7 @@ function openGuide(id, from = document.activeElement) {
 }
 function closeGuide() {
   if ($("#guidePanel").hidden) return;
+  melodyRec?.cancel();
   $("#guidePanel").hidden = true;
   guideReturn?.focus?.();
 }

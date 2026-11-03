@@ -376,3 +376,13 @@ video { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: no
   .fine { text-align: left; align-self: start; }
   .wave-card #waves { height: 190px; }
 }
+
+/* "Your melody" import (Learn tab) */
+#guidePanel .field { font: inherit; font-size: 14px; width: 100%; box-sizing: border-box; padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(20,20,19,.15); background: rgba(255,255,255,.85); color: var(--ink); resize: vertical; }
+#guidePanel .status { margin: 4px 0 10px; min-height: 1.2em; font-size: 14px; color: var(--ink-2); }
+#guidePanel .status.bad { color: #c2410c; }
+#guidePanel .tip { margin: 8px 0 0; font-size: 13px; color: var(--ink-3); line-height: 1.4; }
+#guidePanel .chip.upload { position: relative; overflow: hidden; cursor: pointer; }
+#guidePanel .chip.upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+#guidePanel .chip.on { background: var(--ink); color: var(--lime); }
+#guidePanel .mine { margin-top: 6px; }

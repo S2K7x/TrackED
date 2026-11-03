@@ -74,4 +74,11 @@ export const MUSIC_GUIDES = {
   },
 };
 
+// Not in MUSIC_GUIDE_ORDER: the "Your melody" dialog opens it and adds the import controls below.
+MUSIC_GUIDES.melody = {
+  title: "Learn your own melody",
+  intro: "Found a tune you love? Import it and TrackED teaches it to you note by note, waiting for each one. Only the notes are kept, on this device: nothing is uploaded.",
+  sections: [],
+};
+
 export const MUSIC_GUIDE_ORDER = ["start", "notes", "chords", "rhythm"];

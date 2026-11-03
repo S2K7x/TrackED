@@ -14,7 +14,7 @@ Owner: S2K7x (French-speaking; answer in French, keep **all code, UI text, comme
 ## Commands
 ```bash
 npm start    # python3 -m http.server 8000 → http://localhost:8000
-npm test     # node --test tests/*.test.mjs (98 tests, Node 20+)
+npm test     # node --test tests/*.test.mjs (114 tests, Node 20+)
 node tools/powers-smoke.cjs --cam cam.y4m --out shots   # light headless check of every power (see docs/TESTING.md)
 npm run check  # node --check on every module (also in CI)
 node tools/tune-filter.mjs                                   # One Euro tuning experiment
@@ -45,7 +45,7 @@ node tools/gen-face-mesh.mjs <canonical_face_model.obj> <vision_bundle.mjs> > sr
 | `temporal.js` | Temporal 3-frame vote for the segmentation mask |
 | `onboarding.js` | Tutorial state machine + contextual hints |
 | `errors.js` | Camera error mapping, constraint ladder, upload checks, retry/backoff, failure budget |
-| `music/*` | Music mode (separate from effects, tabs Play, Band, Learn, Notes, Mix): `theory.js` scales and chords, `instruments.js` gesture → notes (8 instruments), `scheduler.js` look-ahead clock, `band.js` auto-accompaniment, `lessons.js` / `songs.js` (public domain only) / `learn.js`, `looper.js`, `audio.js` engine (11 timbres, kits, MIDI), `pluck-worklet.js`, `controller.js` glue + overlay |
+| `music/*` | Music mode (separate from effects, tabs Play, Band, Learn, Notes, Mix): `theory.js` scales and chords, `instruments.js` gesture → notes (8 instruments), `scheduler.js` look-ahead clock, `band.js` auto-accompaniment, `lessons.js` / `songs.js` (public domain only) / `learn.js`, `melody-import.js` ("Your melody": MIDI / audio / typed notes → lesson, notes kept on-device only), `looper.js`, `audio.js` engine (11 timbres, kits, MIDI), `pluck-worklet.js`, `controller.js` glue + overlay |
 | `powers/*` | Superpower mode (tabs Powers, Style, Play, Feel): `catalog.js` the 16 powers (needs, hints, how-to), `abilities.js` one module per power, `controller.js` shared engine (lights, heat, scorch, shockwaves, hit tests, HUD), `gestures.js` charge / clap / circle / tracks / mask stats / pinch zoom, `fx-gl.js` WebGL passes (learned room, history ring, world pass, instanced glows), `particles.js`, `lightning.js`, `targets.js`, `sfx.js`. Loaded with `import()` on first use |
 | `device.js` | Device tier → detection size, model cadence, camera resolution |
 | `options.js` | UI options (values must match renderer/faces tables, checked by tests) |

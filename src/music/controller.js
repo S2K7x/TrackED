@@ -15,6 +15,7 @@ import { StepClock } from "./scheduler.js";
 import { STYLES, bandStep, chordForBar, metronomeStep } from "./band.js";
 import { SongLesson, RhythmLesson, SkillLesson, RHYTHMS } from "./lessons.js";
 import { SONGS } from "./songs.js";
+import { fitToNotes } from "./melody-import.js";
 
 const HARP_STRINGS = 10;
 const PAD_LABELS = { kick: "Kick", snare: "Snare", hat: "Hi-hat", clap: "Clap", tom: "Tom", crash: "Crash" };
@@ -31,10 +32,11 @@ export const INSTRUMENT_HINTS = {
 };
 
 /** Settings a song / rhythm lesson needs (applied by the app before starting). */
-export function lessonSettings(kind, id) {
+export function lessonSettings(kind, id, song) {
   if (kind === "rhythm") return { instrument: "drums" };
   const instrument = id?.startsWith("harp:") ? "harp" : id?.startsWith("theremin:") ? "theremin" : "keys";
-  return { instrument, scale: "major", root: "0", octave: instrument === "harp" ? "5" : "4", snap: "locked" };
+  // imported melodies are stored in C major or C minor (melody-import.js)
+  return { instrument, scale: song?.scale ?? "major", root: "0", octave: instrument === "harp" ? "5" : "4", snap: "locked" };
 }
 
 export class MusicMode {
@@ -65,6 +67,7 @@ export class MusicMode {
     this.arp = { active: false, rate: 2, octave: 0, i: 0 };
     this.dj = { cutoff: 1, echo: 0, drop: false, active: false };
     this.lesson = null;           // {kind: "song"|"rhythm"|"skill", obj, ...}
+    this.customSongs = [];        // "Your melody" imports (set by the app)
     this.onLessonChange = () => {};
     this.lastT = 0;
     this.s = {};
@@ -362,9 +365,19 @@ export class MusicMode {
     return true;
   }
 
+  findSong(id) {
+    const bare = id.replace(/^\w+:/, "");
+    return SONGS.find((s) => s.id === bare) ?? this.customSongs.find((s) => s.id === bare) ?? null;
+  }
+
   startSong(id) {
-    const song = SONGS.find((s) => s.id === id.replace(/^\w+:/, ""));
+    let song = this.findSong(id);
     if (!song) return;
+    if (song.custom) {
+      // fold the imported melody into what the current instrument can play
+      const avail = { harp: this.harpNotes, theremin: this.thereminNotes }[this.s.instrument] ?? this.keyNotes;
+      song = { ...song, notes: fitToNotes(song.notes, avail).notes };
+    }
     this.lesson = { kind: "song", obj: new SongLesson(song), id };
     this.onLessonChange();
   }
@@ -398,12 +411,14 @@ export class MusicMode {
   }
 
   /** Plays a song's melody once so learners hear it first. */
-  previewSong(id, bpm = 96) {
-    const song = SONGS.find((s) => s.id === id.replace(/^\w+:/, ""));
+  previewSong(id, bpm) {
+    const song = this.lesson?.kind === "song" && this.lesson.id === id ? this.lesson.obj.song : this.findSong(id);
     if (!song || !this.engine.ready) return 0;
+    bpm ??= song.bpm ?? 96;
     const beat = 60 / bpm;
     let t = this.engine.ctx.currentTime + 0.1;
-    for (const [midi, beats] of song.notes) {
+    // long imports: hear the opening phrase only
+    for (const [midi, beats] of song.custom ? song.notes.slice(0, 16) : song.notes) {
       this.engine.noteOn(midi, { timbre: "glass", velocity: 0.7, when: t, duration: beats * beat * 0.9 });
       t += beats * beat;
     }
