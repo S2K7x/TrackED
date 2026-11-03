@@ -33,6 +33,15 @@
 | `npm run check` (`node --check` on every module) in CI before the tests | Catches syntax errors in browser-only files that unit tests never import |
 | `main` auto-updated by GitHub Actions from `claude/**` branches after tests pass | Owner wanted `main` to always be up to date automatically |
 
+| **Superpower mode is a third separate mode** (Effects · Music · Powers), loaded on first use | Same reasoning as music: no frame, masks or 3D; hands always, the light person segmenter or the face model only for powers that need them. `import()` keeps it out of the startup path |
+| Powers are **original generic powers** with neutral names ("Energy wave", not a trademarked move) | Project rule: no copyrighted characters or signature moves. The gestures people know still work |
+| Invisibility learns the room from the **person mask**, not a coloured cloth | No props needed. Pixels near you are never learned (dilated mask), never-seen pixels shimmer like heat haze instead of showing a hole |
+| `selfie_segmenter` (250 KB) for powers instead of the multiclass model | Several times faster and 60× smaller; powers only need person vs background, soft edges come from its confidence mask + mipmaps |
+| Two GPU passes per frame for every power: one full-screen "world" pass, one instanced glow draw | One shader handles all warps and compositing (branches are uniform, so cheap); all glows share one buffer upload and one draw call. "Screen" blending keeps colours readable over bright rooms |
+| CPU particles (structure of arrays, swap-remove), not transform feedback | ≤ 4000 particles; emission follows the hands; ~2 ms of JS per frame in total |
+| Gestures read on every tracking result, simulation and drawing on every frame | Same split as music: triggers never miss a short gesture, motion stays smooth |
+| Pinch requires the index **not curled** | A fist's thumb rests on the folded index: without this, fists read as pinches (caught by a unit test) |
+
 ## Bugs found and fixed (worth remembering)
 | Bug | Cause | Fix |
 |---|---|---|
@@ -48,6 +57,8 @@
 | Kitsune ears drawn above the forehead were invisible | The face mesh stops at the hairline (UV oval top ≈ v 0.11); paint outside the oval is never sampled | Ears painted inside the oval; masks are previewed on the Blender reference head (its UVs match the app) |
 | Music gestures missed (1 note out of 3 pinches in a test) | Gesture detection ran at the render rate and sampled the hands only when a frame was drawn | Detection moved to `onVision` (every tracking result); test now gets 3/3 pinches, 6/6 drum strikes |
 | Looper replayed missed notes in a burst after a pause | The cursor advanced by at most one loop per call, so it fell behind real time | After a gap longer than the loop, jump to the present |
+| WebGL "feedback loop" error the first time a power used the learned room | Creating a texture binds it to the *active* unit; the new plate replaced the camera on unit 0, then was rendered into while sampled | Textures are created on a spare unit (15) |
+| Power-up aura covered the whole body in white | The blurred "outer" mask didn't exclude the body itself | Glow × (1 − body mask) |
 | Instagram UI visible in test screenshots | The test webcam clip was a screen recording of a reel | Cropped clip. The app itself never adds such UI |
 
 ## Tuning results

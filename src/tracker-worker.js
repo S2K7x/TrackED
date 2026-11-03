@@ -46,6 +46,7 @@ self.onmessage = async ({ data }) => {
       bitmap.close();
     }
     const transfer = result.mask ? [result.mask.data.buffer] : [];
+    if (result.person) transfer.push(result.person.data.buffer);
     for (const f of result.faces || []) {
       if (f.mesh) transfer.push(f.mesh.buffer);
       if (f.pose) transfer.push(f.pose.buffer);

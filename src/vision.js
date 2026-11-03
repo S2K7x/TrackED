@@ -3,7 +3,7 @@
 // first time an effect needs them, and only run on frames that ask for them.
 import { FilesetResolver, HandLandmarker, FaceLandmarker, ImageSegmenter, MP_BASE } from "./mediapipe.js";
 import { summarizeFace } from "./faces.js";
-import { MaskStabilizer } from "./temporal.js";
+import { MaskStabilizer, MaskSmoother } from "./temporal.js";
 import { withRetry, isNetworkError } from "./errors.js";
 
 const MODELS = {
@@ -11,6 +11,9 @@ const MODELS = {
   face: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
   // 6 classes: background, hair, body-skin, face-skin, clothes, others
   seg: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite",
+  // superpowers: person vs background only. ~250 KB (the multiclass model is ~16 MB)
+  // and several times faster; its single output ("selfie") is the person probability
+  person: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite",
 };
 
 const MAX_FACES = 4;
@@ -45,6 +48,9 @@ export class VisionPipeline {
     this.segTask = null;
     this.stillFace = null; // IMAGE-mode face landmarker for uploaded photos
     this.stabilizer = new MaskStabilizer();
+    this.person = null;    // Promise while loading
+    this.personTask = null;
+    this.smoother = new MaskSmoother();
     this.onLoading = () => {};   // (count of models currently loading) => void
     this.loading = 0;
   }
@@ -97,6 +103,16 @@ export class VisionPipeline {
   warm(list = []) {
     if (list.includes("face")) this.#ensureFace();
     if (list.includes("seg")) this.#ensureSeg();
+    if (list.includes("person")) this.#ensurePerson();
+  }
+
+  #ensurePerson() {
+    this.person ??= this.#create(ImageSegmenter, {
+      baseOptions: { modelAssetPath: MODELS.person },
+      runningMode: "VIDEO",
+      outputCategoryMask: false,
+      outputConfidenceMasks: true,
+    }).then((t) => (this.personTask = t), (err) => console.warn("person segmentation failed to load:", err));
   }
 
   #ensureFace() {
@@ -122,8 +138,9 @@ export class VisionPipeline {
   /**
    * @param {TexImageSource} image
    * @param {number} ts  strictly increasing timestamp (ms)
-   * @param {{face?: boolean, mesh?: boolean, pose?: boolean, seg?: boolean}} want
-   *   mesh = also return the 468-point mesh, pose = the 4×4 head pose (canonical face → camera)
+   * @param {{face?: boolean, mesh?: boolean, pose?: boolean, seg?: boolean, person?: boolean}} want
+   *   mesh = also return the 468-point mesh, pose = the 4×4 head pose (canonical face → camera),
+   *   person = soft person mask (superpowers)
    * @returns {{hands: object[][], faces?: object[], mask?: {data: Uint8Array, width: number, height: number}}}
    */
   process(image, ts, want = {}) {
@@ -160,6 +177,21 @@ export class VisionPipeline {
           // temporal vote against the 2 previous masks removes one-frame flicker at boundaries
           const data = this.stabilizer.apply(m.getAsUint8Array().slice());
           out.mask = { data, width: m.width, height: m.height };
+        }
+        sr.close();
+      }
+    }
+    if (want.person) {
+      this.#ensurePerson();
+      if (this.personTask) {
+        const sr = this.personTask.segmentForVideo(image, ts);
+        const masks = sr.confidenceMasks;
+        const m = masks?.[masks.length - 1];
+        if (m) {
+          // soft mask as bytes (4× less to transfer and upload than floats), then smoothed over time
+          const f = m.getAsFloat32Array(), data = new Uint8Array(f.length);
+          for (let i = 0; i < f.length; i++) data[i] = f[i] * 255 + 0.5;
+          out.person = { data: this.smoother.apply(data), width: m.width, height: m.height };
         }
         sr.close();
       }

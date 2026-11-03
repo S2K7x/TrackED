@@ -1,6 +1,8 @@
 // User-facing options. Values must match the names in renderer.js / faces.js.
 // `tile` is the CSS background of the option's preview tile in the UI.
 
+import { POWERS } from "./powers/catalog.js";
+
 export const OPTIONS = {
   effect: [
     { value: "none", label: "None", tile: "linear-gradient(135deg,#f4f4f1,#d9d9d4)" },
@@ -130,6 +132,7 @@ Object.assign(OPTIONS, {
   mode: [
     { value: "effects", label: "Effects" },
     { value: "music", label: "Music" },
+    { value: "powers", label: "Powers" },
   ],
   instrument: [
     { value: "theremin", label: "Theremin", tile: "repeating-linear-gradient(180deg,#1b2a1f 0 9px,var(--pick) 9px 10px),#1b2a1f" },
@@ -231,6 +234,49 @@ export const MUSIC_TABS = [
   { id: "mix", label: "Mix", groups: ["reverb", "echo", "midi"] },
 ];
 
+// ---------------- Superpower mode (separate tabs, separate settings) ----------------
+Object.assign(OPTIONS, {
+  power: POWERS.map((p) => ({ value: p.id, label: p.label, tile: p.tile, icon: p.icon })),
+  intensity: [
+    { value: "subtle", label: "Subtle" },
+    { value: "strong", label: "Strong" },
+    { value: "epic", label: "Epic" },
+  ],
+  cloak: [
+    { value: "shimmer", label: "Shimmer" },
+    { value: "clear", label: "Clear" },
+    { value: "ghost", label: "Ghost" },
+  ],
+  cloneCount: [
+    { value: "2", label: "2 clones" },
+    { value: "4", label: "4 clones" },
+  ],
+  activation: [
+    { value: "gesture", label: "With a gesture" },
+    { value: "always", label: "Always on" },
+  ],
+  training: [
+    { value: "off", label: "Training off" },
+    { value: "on", label: "🎯 Training: hit targets" },
+  ],
+  powerSound: [
+    { value: "on", label: "Sound effects" },
+    { value: "off", label: "Silent" },
+  ],
+  shake: [
+    { value: "on", label: "Screen shake" },
+    { value: "off", label: "No shake" },
+  ],
+});
+
+/** Tabs of the superpower mode. */
+export const POWER_TABS = [
+  { id: "power", label: "Powers", groups: ["power", "plate"] },
+  { id: "pstyle", label: "Style", groups: ["color", "intensity", "cloak"] },
+  { id: "play", label: "Play", groups: ["training", "activation", "cloneCount"] },
+  { id: "feel", label: "Feel", groups: ["powerSound", "shake"] },
+];
+
 /** One-tap "jam" setups for people who don't know where to start. */
 export const PRESETS = [
   { id: "lofi", label: "☕ Chill lo-fi", set: { instrument: "keys", sound: "epiano", style: "lofi", progression: "ballad", scale: "minorPenta", root: "9", tempo: "auto", reverb: "room" } },
@@ -278,7 +324,7 @@ export function exclusiveConflicts(settings, key, value) {
 }
 
 /** Tab groups drawn by custom UI (sliders) instead of OPTIONS chips. */
-export const PANEL_GROUPS = ["fit", "looper", "preset", "lesson"];
+export const PANEL_GROUPS = ["fit", "looper", "preset", "lesson", "plate"];
 
 export const DEFAULTS = {
   effect: "neon",
@@ -311,6 +357,14 @@ export const DEFAULTS = {
   tempo: "auto",
   metronome: "off",
   kit: "auto",
+  power: "wave",
+  intensity: "strong",
+  cloak: "shimmer",
+  cloneCount: "2",
+  activation: "gesture",
+  training: "off",
+  powerSound: "on",
+  shake: "on",
 };
 
 /** "#ff2d55" → [1, 0.176, 0.333] */

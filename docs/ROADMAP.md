@@ -12,6 +12,11 @@
 - MIDI CC output (hand height → filter / mod wheel) and MIDI clock.
 - Audio-reactive visuals in effects mode (the frame pulsing with the music).
 
+## Superpower ideas
+- Done: 11 powers (energy wave, lightning, pyro, force, invisibility, time stop, speedster, clones, laser vision, portal, power up), training targets with combos, intensity, sound, shake.
+- Next: combos between powers (fireball through a portal, lightning into the energy ball), ice / frost power, telekinesis that lifts real objects (segment an object, move its pixels), body-wide powers with the pose model (a cape, wings), two-player duels (one power each, hits on the other person), a daily challenge.
+- Per-power tuning after real-device tests: charge distance (1.9 hand sizes), clap speed (2.4 → 1.15 sizes within 0.35 s), push growth (+22 % in 0.25 s), flick speed (1.5 heights / s), mouth-open threshold (0.24 on / 0.14 off), circle roundness (0.32).
+
 ## Ideas backlog
 - Jaw-open / blink blendshapes driving 3D accessories (visor opening, eyes glowing).
 - Hair segmentation + hood mask covering the whole head.
@@ -29,6 +34,7 @@
 - Service worker gain on the second launch.
 - Wake lock, haptics, share sheet and Add to Home Screen on phones.
 - Contextual hints (dark, no hands, one hand, too close) with a live camera.
+- Superpower mode with real hands and a real room: every gesture threshold above, the invisibility clean plate (lighting changes, auto-exposure), selfie-segmenter edge quality, laser aim (`faceAim` neutral pitch 0.6), clones spacing, real FPS with the world pass + glow pass on phones.
 - Music mode with real hands (all 8 instruments): finger-count chord picking (`fingerCount` thresholds), strum line feel, beats-grid pinch targeting, DJ filter range, rhythm windows (70/140 ms) and the song lessons' wait mode; pinch thresholds, harp crossing feel, drum strike speed (`minSpeed`), audible latency, Web MIDI with a real DAW, audio in recorded videos (Safari MP4 + AAC).
 
 ## Done (high level)

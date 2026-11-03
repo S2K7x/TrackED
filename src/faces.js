@@ -28,12 +28,15 @@ export function summarizeFace(lm, aspect = 1) {
   const [eyeL, eyeR] = eyeA.x <= eyeB.x ? [eyeA, eyeB] : [eyeB, eyeA];
   const a = lm[FACE.CHEEK_RIGHT], b = lm[FACE.CHEEK_LEFT];
   const r = Math.hypot((a.x - b.x) * aspect, a.y - b.y) / 2;
+  const up = lm[FACE.UPPER_LIP], lo = lm[FACE.LOWER_LIP];
   return {
     eyeL: { x: eyeL.x, y: eyeL.y },
     eyeR: { x: eyeR.x, y: eyeR.y },
-    mouth: mid(lm[FACE.UPPER_LIP], lm[FACE.LOWER_LIP]),
+    mouth: mid(up, lo),
     nose: { x: lm[FACE.NOSE_TIP].x, y: lm[FACE.NOSE_TIP].y },
     r,
+    // lip gap / face half-width: ~0.02 closed, ~0.4 wide open (laser vision trigger)
+    open: r > 0 ? Math.hypot((up.x - lo.x) * aspect, up.y - lo.y) / r : 0,
   };
 }
 
@@ -41,7 +44,7 @@ export function mirrorFace(f) {
   const m = (p) => ({ x: 1 - p.x, y: p.y });
   // mirroring swaps which eye is on the left
   // the head pose stays in camera space; the 3D layer mirrors the whole scene instead
-  const out = { eyeL: m(f.eyeR), eyeR: m(f.eyeL), mouth: m(f.mouth), nose: m(f.nose), r: f.r, pose: f.pose };
+  const out = { eyeL: m(f.eyeR), eyeR: m(f.eyeL), mouth: m(f.mouth), nose: m(f.nose), r: f.r, open: f.open, pose: f.pose };
   if (f.mesh) {
     out.mesh = new Float32Array(f.mesh);
     for (let i = 0; i < out.mesh.length; i += 2) out.mesh[i] = 1 - out.mesh[i];

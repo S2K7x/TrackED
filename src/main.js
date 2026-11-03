@@ -5,7 +5,8 @@ import { paintMask, templateBlob } from "./masks.js";
 import { quadFromHands, quadArea, mirrorLandmarks, faceInFrame } from "./geometry.js";
 import { mirrorFace, selectFaces, TARGETS } from "./faces.js";
 import { PRESETS } from "./options.js";
-import { OPTIONS, TABS, MUSIC_TABS, DEFAULTS, hexToRgb, exclusiveConflicts } from "./options.js";
+import { OPTIONS, TABS, MUSIC_TABS, POWER_TABS, DEFAULTS, hexToRgb, exclusiveConflicts } from "./options.js";
+import { POWER_GUIDE, powerById, powerWants } from "./powers/catalog.js";
 import { Capture } from "./capture.js";
 import { AudioEngine } from "./music/audio.js";
 import { MusicMode, lessonSettings, SONGS, RHYTHMS } from "./music/controller.js";
@@ -40,6 +41,8 @@ const GROUP_TITLES = {
   octave: "Range", snap: "Theremin pitch", reverb: "Reverb", echo: "Echo", midi: "MIDI output",
   preset: "Jam presets: one tap to start", style: "Band style", progression: "Chord progression", tempo: "Tempo",
   metronome: "Metronome", kit: "Drum kit", lesson: "Lessons",
+  power: "Superpower", plate: "Get started", intensity: "Intensity", cloak: "Invisibility look", cloneCount: "Clones",
+  activation: "Invisibility, time stop, clones", training: "Training", powerSound: "Sound", shake: "Screen shake",
 };
 
 // ---------------- State ----------------
@@ -112,8 +115,9 @@ const el = (tag, props = {}, html) => {
 };
 
 const isMusic = () => settings.mode === "music";
-const currentTabs = () => (isMusic() ? MUSIC_TABS : TABS);
-const tabByMode = { effects: "effect", music: "instrument" };
+const isPowers = () => settings.mode === "powers";
+const currentTabs = () => (isMusic() ? MUSIC_TABS : isPowers() ? POWER_TABS : TABS);
+const tabByMode = { effects: "effect", music: "instrument", powers: "power" };
 
 function renderTabs() {
   // mode switch: Effects | Music (separate tabs, separate settings)
@@ -131,6 +135,7 @@ function renderTabs() {
     return b;
   }));
   $("#panel").classList.toggle("music", isMusic());
+  $("#panel").classList.toggle("powers", isPowers());
 }
 
 function renderChips() {
@@ -159,11 +164,12 @@ function renderChips() {
 
 function renderGroup(group) {
   const on = (v) => settings[group] === v;
-  if (group === "instrument") {
-    return OPTIONS.instrument.map((o) => {
+  if (group === "plate") return renderPowerStart();
+  if (group === "instrument" || group === "power") {
+    return OPTIONS[group].map((o) => {
       const b = el("button", { className: "fx" + (on(o.value) ? " on" : "") }, `<i></i>${o.label}`);
       b.querySelector("i").style.background = o.tile;
-      b.addEventListener("click", () => set("instrument", o.value));
+      b.addEventListener("click", () => set(group, o.value));
       return b;
     });
   }
@@ -269,6 +275,7 @@ function set(key, value, rerender = true) {
   if (key === "mask" || (key === "color" && COLORED_MASKS.has(settings.mask))) applyMask();
   if (key === "accessory" || key === "color") applyAccessory();
   if (MUSIC_KEYS.has(key)) applyMusicSettings(key);
+  if (POWER_KEYS.has(key) || (key === "color" && isPowers())) applyPowerSettings(key);
   if ((key === "anchor" || key === "size") && settings.accessory === "model") three?.fitUserModel(settings.anchor, Number(settings.size), modelFit);
   if (rerender) renderChips();
 }
@@ -282,29 +289,39 @@ let music = null;
 
 async function setMode(mode) {
   if (mode === settings.mode) return;
-  settings.mode = mode;
-  saveSettings();
-  if (mode === "music") {
+  const prev = settings.mode;
+  if (mode === "music" || mode === "powers") {
     try {
       await engine.ensure();             // runs inside the click: allowed to start audio
     } catch (err) {
-      flash(err.message);
-      settings.mode = "effects";
-      renderTabs(); renderChips();
-      return;
+      // music can't work without audio; powers simply stay silent
+      if (mode === "music") { flash(err.message); renderTabs(); renderChips(); return; }
     }
-    if (!music) { music = new MusicMode(engine, $("#music-layer")); music.onLessonChange = renderLesson; }
-    applyMusicSettings();
-    $("#music-layer").hidden = false;
-    if (tutorial.active) { tutorial.stop(); $("#coach").hidden = true; }
-    showStatus("Show your hands to play");
-  } else {
+  }
+  if (mode === "powers" && !(await ensurePowers())) { renderTabs(); renderChips(); return; }
+  settings.mode = mode;
+  saveSettings();
+  if (prev === "music") {
     music?.deactivate();
     $("#lesson").hidden = true;
     $("#music-layer").hidden = true;
     $("#music-layer").getContext("2d").clearRect(0, 0, 1e5, 1e5);
   }
-  if (capture?.recorder) toggleRecording(); // a clip never mixes the two modes
+  if (prev === "powers") {
+    powers?.deactivate();
+    $("#power-layer").hidden = true;
+  }
+  if (mode === "music") {
+    if (!music) { music = new MusicMode(engine, $("#music-layer")); music.onLessonChange = renderLesson; }
+    applyMusicSettings();
+    $("#music-layer").hidden = false;
+    showStatus("Show your hands to play");
+  } else if (mode === "powers") {
+    applyPowerSettings("power");
+    $("#power-layer").hidden = false;
+  }
+  if (mode !== "effects" && tutorial.active) { tutorial.stop(); $("#coach").hidden = true; }
+  if (capture?.recorder) toggleRecording(); // a clip never mixes two modes
   renderTabs();
   renderChips();
 }
@@ -333,6 +350,73 @@ function toggleLoop() {
   const st = music.toggleLoop(performance.now() / 1000);
   flash({ recording: "Recording a loop… play, then press again to loop it", playing: "Loop playing. Keep jamming on top!", idle: "Loop cleared" }[st]);
   renderChips();
+}
+
+// ---------------- Superpower mode ----------------
+// Its own tabs and settings. Hands always run; the light body segmenter and
+// the face model only when the chosen power needs them. Everything is drawn
+// on the main canvas (src/powers/fx-gl.js), so photos and videos include it.
+const POWER_KEYS = new Set(["power", "intensity", "cloak", "cloneCount", "activation", "training", "powerSound", "shake"]);
+const BEST_KEY = "tracked.powerBest";
+let powers = null, powersLoading = null;
+
+/** Loads the superpower code on first use (it isn't needed to start the app). */
+function ensurePowers() {
+  if (powers) return Promise.resolve(powers);
+  if (!renderer) return Promise.resolve(null);
+  powersLoading ??= import("./powers/controller.js").then(({ PowersMode }) => {
+    powers = new PowersMode({ renderer, engine, overlay: $("#power-layer") });
+    try { powers.bestSaved = Number(localStorage.getItem(BEST_KEY)) || 0; } catch { /* storage blocked */ }
+    powers.onBest = (n) => { try { localStorage.setItem(BEST_KEY, String(n)); } catch { /* storage blocked */ } };
+    return powers;
+  }).catch((err) => {
+    console.error(err);
+    flash("Superpowers aren't available on this device");
+    powersLoading = null;
+    return null;
+  });
+  return powersLoading;
+}
+
+function applyPowerSettings(key) {
+  if (!powers) return;
+  powers.configure(settings);
+  if (key === "power") {
+    // start loading the models this power needs while the user reads the hint
+    const w = powerWants(settings.power);
+    tracker?.warm([...(w.person ? ["person"] : []), ...(w.face ? ["face"] : [])]);
+    showStatus(powerById(settings.power).hint);
+  }
+}
+
+/** "Get started" row of the Powers tab: learn the room (for powers that use it) and the how-to guide. */
+function renderPowerStart() {
+  const nodes = [];
+  if (powerById(settings.power).needs.includes("plate")) {
+    const b = el("button", { className: "chip lead" }, "Learn the background");
+    b.addEventListener("click", () => {
+      powers?.learnBackground();
+      flash("Step out of view for 3 seconds while TrackED learns the room. Keep the camera still.");
+    });
+    nodes.push(b);
+  }
+  const g = el("button", { className: "chip guide" },
+    `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17v.01"/></svg>How to use your powers`);
+  g.addEventListener("click", () => openGuide("powers"));
+  nodes.push(g);
+  return nodes;
+}
+
+const powerLayer = $("#power-layer");
+function drawPowersHud(t) {
+  const w = stage.clientWidth, h = stage.clientHeight, dpr = Math.min(2, devicePixelRatio || 1);
+  if (powerLayer.width !== Math.round(w * dpr) || powerLayer.height !== Math.round(h * dpr)) {
+    powerLayer.width = Math.round(w * dpr);
+    powerLayer.height = Math.round(h * dpr);
+  }
+  const g = powerLayer.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  powers.drawHud(g, w, h, t);
 }
 
 let lessonTick = 0;                    // refresh the rhythm lesson card every 6 frames
@@ -798,7 +882,7 @@ new ResizeObserver(() => {
 // ---------------- Keyboard (desktop) ----------------
 addEventListener("keydown", (e) => {
   if (!renderer || e.target.closest?.("input") || e.metaKey || e.ctrlKey || e.altKey) return;
-  const cycleKey = isMusic() ? "instrument" : "effect";
+  const cycleKey = isMusic() ? "instrument" : isPowers() ? "power" : "effect";
   const list = OPTIONS[cycleKey].map((o) => o.value);
   const i = list.indexOf(settings[cycleKey]);
   if (e.key === "ArrowRight") set(cycleKey, list[(i + 1) % list.length]);
@@ -808,6 +892,7 @@ addEventListener("keydown", (e) => {
   else if (e.key === "d" || e.key === "D") $("#debug").click();
   else if (e.key === "f" || e.key === "F") toggleFreeze();
   else if (e.key === "m" || e.key === "M") setMode(isMusic() ? "effects" : "music");
+  else if (e.key === "s" || e.key === "S") setMode(isPowers() ? "effects" : "powers");
   else if ((e.key === "l" || e.key === "L") && isMusic()) toggleLoop();
   else if (e.key === "?") toggleHelp();
   else if (e.key === "Escape" && !$("#guidePanel").hidden) closeGuide();
@@ -819,8 +904,8 @@ addEventListener("keydown", (e) => {
 
 // ---------------- Startup ----------------
 async function start() {
-  // reopening in music mode: start the audio now, while we are inside the click
-  const audioReady = settings.mode === "music" ? engine.ensure().catch(() => null) : null;
+  // reopening in music / powers mode: start the audio now, while we are inside the click
+  const audioReady = settings.mode !== "effects" ? engine.ensure().catch(() => null) : null;
   $("#start").hidden = true;
   $("#app").hidden = false;
   fitStage();
@@ -837,9 +922,13 @@ async function start() {
   }
   watchContextLoss();
   capture = new Capture(canvas, (msg) => flash(msg));
-  // in music mode, recordings carry the instrument's sound
-  capture.audioSource = () => (isMusic() && engine.ready ? engine.stream : null);
-  if (audioReady && await audioReady) {
+  // in music and powers mode, recordings carry the sound
+  capture.audioSource = () => ((isMusic() || isPowers()) && engine.ready ? engine.stream : null);
+  if (settings.mode === "powers") {
+    await audioReady;
+    if (await ensurePowers()) { applyPowerSettings("power"); $("#power-layer").hidden = false; }
+    else settings.mode = "effects";
+  } else if (audioReady && await audioReady) {
     music = new MusicMode(engine, $("#music-layer"));
     music.onLessonChange = renderLesson;
     applyMusicSettings();
@@ -1025,7 +1114,7 @@ function updateOnboarding(t) {
 // "make your own" guides (src/guides.js)
 let guideReturn = null; // element to focus again when the guide closes
 function openGuide(id, from = document.activeElement) {
-  const g = GUIDES[id] ?? MUSIC_GUIDES[String(id).replace(/^music:/, "")];
+  const g = id === "powers" ? POWER_GUIDE : GUIDES[id] ?? MUSIC_GUIDES[String(id).replace(/^music:/, "")];
   if (!g) return;
   toggleHelp(false);
   const list = (tag, items) => (items?.length ? `<${tag}>${items.map((t) => `<li>${t}</li>`).join("")}</${tag}>` : "");
@@ -1108,6 +1197,7 @@ function watchContextLoss() {
       renderer = new Renderer(canvas);
       if (state.overlayImage) renderer.setOverlay(state.overlayImage);
       applyMask();
+      powers?.rebuild(renderer);
       $("#freeze").classList.remove("on");
       if (three) { const buf = lastModel; three = null; threeLoading = null; if (settings.accessory !== "none") await applyAccessory(); if (buf && settings.accessory === "model") await (await ensureThree())?.loadModel(buf.slice(0), settings.anchor, Number(settings.size), modelFit); }
       glLost = false;
@@ -1171,9 +1261,18 @@ function renderFrame() {
   const t = performance.now();
   // power saving: with no hand in sight for 3 s, track every other frame (a hand
   // entering the picture is still picked up within ~70 ms)
-  const idle = t - state.handsSeenAt > 3000 && !(maskArea() === "always" && (settings.mask !== "none" || settings.accessory !== "none"));
+  const idle = t - state.handsSeenAt > 3000 && !isPowers() && !(maskArea() === "always" && (settings.mask !== "none" || settings.accessory !== "none"));
   if (!idle || (state.idleTick = !state.idleTick)) tracker.submit(video, t, extrasWanted());
   update(t / 1000);
+  if (isPowers() && powers) {
+    // superpowers: their own GPU passes, then a small 2D HUD on top
+    powers.render(video, t / 1000, { mirror: state.facing === "user" });
+    drawPowersHud(t / 1000);
+    capture.afterDraw();
+    if (state.debug) drawDebug();
+    countFps(t);
+    return;
+  }
   const fs = frameState(t / 1000);
   if (isMusic() && music) {
     // music mode: plain video, the instrument is drawn on its own layer
@@ -1216,6 +1315,15 @@ function renderFrame() {
  */
 function extrasWanted() {
   if (isMusic()) return {};
+  if (isPowers()) {
+    const w = powers?.wants() ?? {};
+    if (!w.person && !w.face) return {};
+    state.frameNo++;
+    // the body mask drives most powers: run it as often as the device allows
+    const every = w.person ? Math.max(1, extrasEvery - 1) : extrasEvery;
+    if (state.frameNo % every) return {};
+    return { person: !!w.person, face: !!w.face };
+  }
   const mesh = settings.mask !== "none" && (settings.mask !== "custom" && settings.mask !== "swap" || !!userMasks[settings.mask]);
   const pose = settings.accessory !== "none" && !!three?.active;
   const maskAlways = (mesh || pose) && maskArea() === "always";
@@ -1287,6 +1395,15 @@ function onVision(result, timestampMs) {
   if (result.mask) renderer.setMask(result.mask);
 
   const aspect = video.videoWidth / video.videoHeight || 1;
+  if (isPowers()) {
+    if (state.hands.length) state.handsSeenAt = now;
+    if (powers) {
+      if (result.person) powers.setPerson(result.person);
+      if (result.faces) powers.setFaces(state.faces);
+      showStatus(powers.update(state.hands, now / 1000, aspect));
+    }
+    return;
+  }
   if (isMusic()) {
     // the hands play the instrument: no frame, pinch-to-switch or signs.
     // Notes are triggered right here, as soon as the landmarks arrive (lowest latency).
@@ -1429,10 +1546,11 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     video.pause();
     music?.release();
+    powers?.sfx.stopAll();
     engine.suspend();
     if (capture?.recorder) toggleRecording(); // save the clip instead of recording a frozen frame
   }
-  else { video.play().catch(() => {}); keepAwake(); if (isMusic()) engine.ensure().catch(() => {}); }
+  else { video.play().catch(() => {}); keepAwake(); if (isMusic() || isPowers()) engine.ensure().catch(() => {}); }
 });
 
 // Last-resort error reporting: log everything, tell the user at most every 5 s.
@@ -1453,4 +1571,4 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || location.
 }
 
 // test hook (used by automated browser tests only)
-window.__tracked = { state, settings, set, get modelFit() { return modelFit; }, onVision: (...a) => onVision(...a), get renderer() { return renderer; }, get three() { return three; }, get tracker() { return tracker; }, get music() { return music; }, engine, setMode: (m) => setMode(m) };
+window.__tracked = { state, settings, set, get modelFit() { return modelFit; }, onVision: (...a) => onVision(...a), get renderer() { return renderer; }, get three() { return three; }, get tracker() { return tracker; }, get music() { return music; }, get powers() { return powers; }, engine, setMode: (m) => setMode(m) };

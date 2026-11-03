@@ -8,6 +8,30 @@
 // a one-frame flip and keeps the previous class. A real change survives from
 // the second frame on (the history holds raw masks, so it is never "locked").
 
+/**
+ * Temporal smoothing of a soft person mask (0..255): an exponential moving
+ * average with a faster attack than release, so the mask follows you quickly
+ * when you move in but doesn't flicker at the edges. Corrects `cur` in place
+ * (so it can be transferred) and keeps its own copy as history.
+ */
+export class MaskSmoother {
+  constructor({ attack = 0.75, release = 0.5 } = {}) { this.attack = attack; this.release = release; this.prev = null; }
+
+  reset() { this.prev = null; }
+
+  /** @param {Uint8Array} cur */
+  apply(cur) {
+    const p = this.prev;
+    if (!p || p.length !== cur.length) { this.prev = Uint8Array.from(cur); return cur; }
+    const ka = this.attack, kr = this.release;
+    for (let i = 0; i < cur.length; i++) {
+      const c = cur[i], q = p[i];
+      cur[i] = p[i] = Math.round(q + (c - q) * (c > q ? ka : kr));
+    }
+    return cur;
+  }
+}
+
 export class MaskStabilizer {
   constructor() { this.prev = null; this.prev2 = null; }
 
