@@ -6,6 +6,8 @@ import { bolt, makeRng, rayToEdge } from "../src/powers/lightning.js";
 import { Particles, GlowBatch, KIND, STRIDE } from "../src/powers/particles.js";
 import { Targets, segDist } from "../src/powers/targets.js";
 import { MaskSmoother } from "../src/temporal.js";
+import { maskStats, PinchZoom, Spring } from "../src/powers/gestures.js";
+import { ABILITIES } from "../src/powers/abilities.js";
 import { summarizeFace, mirrorFace } from "../src/faces.js";
 import { OPTIONS, POWER_TABS, DEFAULTS, PANEL_GROUPS } from "../src/options.js";
 
@@ -43,6 +45,8 @@ test("catalog: every power is complete and the options match it", () => {
   assert.deepEqual(powerWants("wave"), { person: false, face: false });
   assert.equal(powerById("nope").id, POWERS[0].id);
   assert.equal(POWER_GUIDE.sections.length, POWERS.length + 1);
+  assert.deepEqual(Object.keys(ABILITIES).sort(), [...POWER_IDS].sort(), "every power has an ability");
+  assert.deepEqual(powerWants("teleport"), { person: true, face: false });
   // no trademarked move names
   const text = JSON.stringify(POWERS).toLowerCase();
   for (const word of ["kamehameha", "hadouken", "rasengan", "chidori", "jutsu"]) assert.ok(!text.includes(word), word);
@@ -50,7 +54,7 @@ test("catalog: every power is complete and the options match it", () => {
 
 test("power tabs, settings and defaults are valid", () => {
   for (const t of POWER_TABS) for (const g of t.groups) assert.ok(OPTIONS[g] || PANEL_GROUPS.includes(g), g);
-  for (const k of ["power", "intensity", "cloak", "cloneCount", "activation", "training", "powerSound", "shake"]) {
+  for (const k of ["power", "intensity", "cloak", "cloneCount", "activation", "training", "powerSound", "shake", "look", "powerSwitch", "snap"]) {
     assert.ok(OPTIONS[k].some((o) => o.value === DEFAULTS[k]), k);
   }
   assert.ok(OPTIONS.mode.some((o) => o.value === "powers"));
@@ -229,12 +233,13 @@ test("particles: physics, death, swap-remove and glow output", () => {
   assert.equal(full.push(0, 0, 0, 0, [1, 1, 1], 1, 0.01, KIND.DOT), false);
 });
 
-test("targets: spawn away from the middle, hits, combo, best", () => {
-  const T = new Targets(makeRng(5), { max: 3 });
+test("targets: spawn away from the middle, hits, combo, gold, rounds", () => {
+  const T = new Targets(makeRng(5), { max: 3, round: 60 });
   for (let i = 0; i < 100; i++) T.update(0.05, i * 0.05);
-  assert.equal(T.list.length, 3);
+  assert.ok(T.list.length >= 3);
   for (const g of T.list) assert.ok(g.x < 0.4 || g.x > 0.6, String(g.x));
-  const [g1, g2] = T.list;
+  const g1 = { id: 90, x: 0.1, y: 0.2, vx: 0, vy: 0, r: 0.05, gold: false }, g2 = { id: 91, x: 0.9, y: 0.7, vx: 0, vy: 0, r: 0.05, gold: false };
+  T.list = [g1, g2];
   assert.equal(T.hitCircle(g1.x, g1.y, 0.01, 10).length, 1);
   assert.equal(T.score, 10);
   assert.equal(T.hitSegment(g2.x - 0.1, g2.y, g2.x + 0.1, g2.y, 0.01, 11).length, 1);
@@ -244,7 +249,140 @@ test("targets: spawn away from the middle, hits, combo, best", () => {
   T.update(0.01, 20);
   assert.equal(T.combo, 0, "combo expires");
   assert.equal(T.hitRing(0, 0, 5, 0.01, 21).length, 0);
+  // a golden target is worth triple
+  T.list.push({ id: 99, x: 0.1, y: 0.1, vx: 0, vy: 0, r: 0.05, gold: true });
+  T.hitCircle(0.1, 0.1, 0.01, 30);
+  assert.equal(T.score, 60);
+  // the round ends after 60 s, then a new one starts by itself
+  T.update(0.05, 61);
+  assert.ok(T.over && T.list.length === 0);
+  assert.ok(T.restartIn(62) > 0);
+  T.update(0.05, 61 + 7);
+  assert.ok(!T.over);
+  assert.equal(T.score, 0);
+  assert.equal(T.best, 60, "best survives the new round");
   assert.ok(Math.abs(segDist(0.5, 0.5, 0, 0, 1, 0) - 0.5) < 1e-9);
+});
+
+test("targets: harder later in the round", () => {
+  const T = new Targets(makeRng(2), { max: 3, round: 60 });
+  for (let i = 0; i <= 1100; i++) T.update(0.05, i * 0.05);   // 55 s in, nothing hit
+  assert.ok(T.list.length > 3, String(T.list.length));
+  assert.ok(T.level(55) > 0.9);
+});
+
+test("maskStats: where the person is, mirrored for display", () => {
+  const W = 64, H = 64, data = new Uint8Array(W * H);
+  for (let y = 16; y < 64; y++) for (let x = 8; x < 24; x++) data[y * W + x] = 255;   // a body on the camera's left
+  const st = maskStats({ data, width: W, height: H }, true, 1);
+  assert.ok(Math.abs(st.cx - (1 - 16 / 64)) < 0.01, String(st.cx));                  // mirrored → right side of the screen
+  assert.ok(Math.abs(st.top - 16.5 / 64) < 0.01 && st.bottom > 0.98);
+  assert.ok(st.left > 0.6 && st.right < 0.9);
+  assert.ok(Math.abs(st.area - (16 * 48) / (64 * 64)) < 0.01);
+  assert.equal(maskStats({ data: new Uint8Array(W * H), width: W, height: H }), null);
+});
+
+test("PinchZoom and Spring", () => {
+  const z = new PinchZoom({ min: 0.35, max: 1.8 });
+  const tr = (ax, bx, pinch = true) => [{ info: { pinch, tip: { x: ax, y: 0.5 } } }, { info: { pinch, tip: { x: bx, y: 0.5 } } }];
+  z.update(tr(0.4, 0.6), 1);
+  assert.equal(z.update(tr(0.3, 0.7), 1).scale, 1.8, "×2 clamped to the max");
+  assert.equal(z.update(tr(0.3, 0.7, false), 1).active, false);
+  assert.equal(z.scale, 1.8, "keeps the size after letting go");
+  z.update(tr(0.3, 0.7), 1);
+  z.update(tr(0.45, 0.55), 1);
+  assert.ok(Math.abs(z.scale - 0.45) < 1e-9, String(z.scale));
+  const sp = new Spring();
+  sp.set(0.2);
+  let overshoot = false;
+  for (let i = 0; i < 120; i++) { sp.step(0, 1 / 60); if (sp.x < 0) overshoot = true; }
+  assert.ok(overshoot, "wobbles past the rest point");
+  assert.ok(Math.abs(sp.x) < 0.01, String(sp.x));
+});
+
+// ---------- abilities, driven by a fake controller ----------
+function fakeC(extra = {}) {
+  const calls = [];
+  const rec = (name) => (...a) => { calls.push([name, ...a]); return []; };
+  const c = {
+    t: 0, k: 1, aspect: 1, color: [1, 0, 0], hot: [1, 0.5, 0.5], s: {}, always: false, training: false,
+    tracks: [], faces: [], facesFresh: true, body: { cx: 0.5, cy: 0.6, top: 0.2, bottom: 1, left: 0.4, right: 0.6, area: 0.1 },
+    targetsList: [], B: new GlowBatch(5000), particles: new Particles(5000),
+    world: { wells: [], drags: [], portals: [], frostPts: [] },
+    calls, trigs: new Map(),
+    trig(kind, tr, cd) { const key = kind + tr.id; if (!this.trigs.has(key)) this.trigs.set(key, new Trigger(cd)); return this.trigs.get(key); },
+    sfx: new Proxy({}, { get: (_, name) => (name === "loop" ? () => null : rec(`sfx.${String(name)}`)) }),
+    ...extra,
+  };
+  for (const m of ["burst", "wave", "light", "flare", "heat", "scorch", "shake", "flash", "aberr", "vignette", "requestFreeze", "moment", "explode", "hitCircle", "hitSegment", "hitRing"]) c[m] = rec(m);
+  c.aimAt = () => null;
+  return c;
+}
+const track = (lm, id = 1, more = {}) => ({ id, info: handInfo(lm, 1), vx: 0, vy: 0, speed: 0, growth: 0, age: 1, ...more });
+
+test("glow kinds used by the abilities all exist (an undefined kind draws nothing)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/powers/abilities.js", import.meta.url), "utf8") + readFileSync(new URL("../src/powers/controller.js", import.meta.url), "utf8");
+  for (const [, name] of src.matchAll(/KIND\.([A-Z]+)/g)) assert.ok(KIND[name] !== undefined, name);
+  const shader = readFileSync(new URL("../src/powers/fx-gl.js", import.meta.url), "utf8");
+  for (const v of Object.values(KIND)) if (v >= 2 && v !== KIND.SPARK && v !== KIND.FLAME) assert.ok(shader.includes(`kind == ${v}.0`), `shader handles kind ${v}`);
+});
+
+test("abilities: every power runs a few frames without throwing", () => {
+  for (const id of POWER_IDS) {
+    const ab = ABILITIES[id]();
+    const c = fakeC({ tracks: [track(hand(0.4, 0.5), 1), track(hand(0.6, 0.5), 2)], faces: [{ eyeL: { x: 0.45, y: 0.4 }, eyeR: { x: 0.55, y: 0.4 }, nose: { x: 0.6, y: 0.46 }, mouth: { x: 0.5, y: 0.5 }, r: 0.1, open: 0.4 }] });
+    for (let i = 0; i < 30; i++) { c.t = i / 30; ab.gesture?.(c, 1 / 30); ab.frame?.(c, 1 / 30); }
+    ab.stop?.();
+  }
+});
+
+test("reality warp: pinch drags the picture, letting go springs back", () => {
+  const ab = ABILITIES.warp(), c = fakeC();
+  c.tracks = [track(hand(0.5, 0.5, { pinch: true }))];
+  ab.gesture(c, 1 / 30);
+  c.tracks = [track(hand(0.6, 0.5, { pinch: true }))];
+  ab.gesture(c, 1 / 30);
+  ab.frame(c, 1 / 30);
+  assert.equal(c.world.drags.length, 1);
+  assert.ok(Math.abs(c.world.drags[0].dx - 0.1) < 1e-9);
+  c.tracks = [track(hand(0.6, 0.5))];
+  ab.gesture(c, 1 / 30);
+  assert.ok(c.calls.some(([n]) => n === "sfx.boing"));
+  let n = 0;
+  for (; n < 200; n++) { c.world.drags = []; ab.frame(c, 1 / 30); if (!c.world.drags.length) break; }
+  assert.ok(n < 200, "the grab settles and disappears");
+});
+
+test("teleport: point sideways and hold → blink, clamped inside the picture", () => {
+  const ab = ABILITIES.teleport(), c = fakeC();
+  const pointRight = hand(0.6, 0.5, { fingers: 1, thumb: false }).map((p, i) => (i >= 6 && i <= 8 ? { x: 0.6 + (i - 5) * 0.03, y: 0.5 } : p));
+  c.tracks = [track(pointRight)];
+  for (let i = 0; i <= 25; i++) { c.t = i / 30; ab.gesture(c, 1 / 30); }
+  assert.ok(Math.abs(ab.offset - 0.32) < 1e-9, String(ab.offset));
+  c.tracks = []; c.t = 1.5; ab.gesture(c, 1 / 30);              // lower the hand, then point again
+  c.tracks = [track(pointRight)];
+  for (let i = 0; i <= 25; i++) { c.t = 2 + i / 30; ab.gesture(c, 1 / 30); }
+  assert.ok(Math.abs(ab.offset - (0.88 - 0.5)) < 1e-9, "clamped so you stay in the picture");
+  c.t = 5; ab.frame(c, 1 / 30);
+  assert.ok(c.world.move && c.world.move.amt > 0.9 && Math.abs(c.world.move.dx - 0.38) < 1e-6);
+});
+
+test("frost: a still palm grows a patch, both palms frost the edges", () => {
+  const ab = ABILITIES.frost(), c = fakeC();
+  c.tracks = [track(hand(0.3, 0.5), 1), track(hand(0.7, 0.5), 2)];
+  for (let i = 0; i < 60; i++) ab.frame(c, 1 / 30);
+  assert.equal(ab.patches.length, 2);
+  assert.ok(ab.patches[0].r > 0.15 && ab.patches[0].s > 0.9, JSON.stringify(ab.patches[0]));
+  assert.ok(c.world.frost > 0.3, String(c.world.frost));
+});
+
+test("time stop, invisibility and clones honour Always on", () => {
+  for (const id of ["freeze", "invisible", "clones"]) {
+    const ab = ABILITIES[id](), c = fakeC({ always: true, s: { cloneCount: "2" } });
+    for (let i = 0; i < 40; i++) ab.frame(c, 1 / 30);
+    assert.ok(ab.st.on, id);
+  }
 });
 
 test("MaskSmoother: fast attack, slower release, transferable output", () => {

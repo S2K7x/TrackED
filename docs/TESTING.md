@@ -1,7 +1,7 @@
 # Testing
 
 ## Unit tests
-`npm test` runs `node --test tests/*.test.mjs` (89 tests): superpowers (catalog, hand info, tracks, energy charge, clap, air circle, triggers, face aim, lightning, particles, glow batch, targets, mask smoother), music theory, chords/progressions, songs fit the keys, step clock, band grooves, song/rhythm/skill lessons, strum line, step grid, music guides,, gesture → note detection (pinch keys, string crossings, pad strikes, theremin), looper, music tabs/options, geometry, 3D model fit (clamping, model key, per-model store), One Euro + prediction, faces, options ↔ renderer consistency, ready-made model files present, every mask option has a painter, Kitsune/Aero exclusivity, guides (coverage, markup, real labels and limits), capture MIME, device profile, mesh data, gestures (2D + 3D), mask stabilizer, error helpers, onboarding. CI runs them on `main`, PRs and every `claude/**` push (which then auto-merges into `main`).
+`npm test` runs `node --test tests/*.test.mjs` (98 tests): superpowers (catalog, hand info, tracks, energy charge, clap, air circle, triggers, face aim, mask stats, pinch zoom, spring, lightning, particles, glow kinds vs shader, training rounds, every ability with a fake controller: warp spring-back, teleport clamping, frost growth, Always on), music theory, chords/progressions, songs fit the keys, step clock, band grooves, song/rhythm/skill lessons, strum line, step grid, music guides,, gesture → note detection (pinch keys, string crossings, pad strikes, theremin), looper, music tabs/options, geometry, 3D model fit (clamping, model key, per-model store), One Euro + prediction, faces, options ↔ renderer consistency, ready-made model files present, every mask option has a painter, Kitsune/Aero exclusivity, guides (coverage, markup, real labels and limits), capture MIME, device profile, mesh data, gestures (2D + 3D), mask stabilizer, error helpers, onboarding. CI runs them on `main`, PRs and every `claude/**` push (which then auto-merges into `main`).
 
 ## Browser tests (headless Chromium with a fake camera)
 Playwright and Chromium are pre-installed in the cloud container (`require('playwright')`, don't reinstall).
@@ -21,6 +21,13 @@ Playwright and Chromium are pre-installed in the cloud container (`require('play
 - Set `__tracked.tracker.onResult = () => {}` so real tracking doesn't overwrite injected hands, wrap `engine.noteOn` / `engine.drum` to count events, and feed hands with `onVision({ hands })`. Notes are triggered in `onVision`, so every injected result counts. Count `when`-scheduled notes to check the band, arp and sequencer (they run on the StepClock). `window.__fingers(cx, n)` in `test15.js`-style scripts builds a hand with n extended fingers for Chords and Arp.
 
 ### Superpower mode
+- **Use the smoke test** (light on the laptop: tracking off, tiny camera, one pass, ~30 s):
+  ```
+  ffmpeg -f lavfi -i "gradients=s=320x180:c0=0x2a3038:c1=0x7a6a5a:speed=0.02:r=15" -t 2 -pix_fmt yuv420p /tmp/cam.y4m
+  PLAYWRIGHT=<path to the playwright module> CHROMIUM=<optional browser path> node tools/powers-smoke.cjs --cam /tmp/cam.y4m --out /tmp/shots [--only wave,frost]
+  ```
+  It serves the app itself, triggers every power, checks `gl.getError()` and the console, saves a screenshot per power, and exits non-zero on any error.
+- `state.noTracking = true` (test hook) stops sending frames to the models. Without it, the models keep running on the fake camera and a laptop heats up for nothing.
 - Switch with `window.__tracked.setMode("powers")`; the hook exposes `powers` (the controller: `charge`, `beams`, `strikes`, `fireballs`, `waves`, `portals`, `invis`, `frozen`, `aura`, `targets`…).
 - Disable real tracking (`tracker.onResult = () => {}`), then inject `onVision({ hands, handInfo, person, faces })`: `person` is a soft mask `{ data: Uint8Array, width, height }` in camera space (mirror x), `faces` are anchors `{ eyeL, eyeR, mouth, nose, r, open }` in camera space.
 - Send the "room" first with an empty mask so the plate learns it, then a person-shaped mask, to test invisibility and time stop.

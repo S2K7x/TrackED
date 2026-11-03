@@ -13,9 +13,9 @@
 - Audio-reactive visuals in effects mode (the frame pulsing with the music).
 
 ## Superpower ideas
-- Done: 11 powers (energy wave, lightning, pyro, force, invisibility, time stop, speedster, clones, laser vision, portal, power up), training targets with combos, intensity, sound, shake.
-- Next: combos between powers (fireball through a portal, lightning into the energy ball), ice / frost power, telekinesis that lifts real objects (segment an object, move its pixels), body-wide powers with the pose model (a cape, wings), two-player duels (one power each, hits on the other person), a daily challenge.
-- Per-power tuning after real-device tests: charge distance (1.9 hand sizes), clap speed (2.4 → 1.15 sizes within 0.35 s), push growth (+22 % in 0.25 s), flick speed (1.5 heights / s), mouth-open threshold (0.24 on / 0.14 off), circle roundness (0.32).
+- Done: 16 powers (energy wave, lightning, pyro, frost, force, shield, reality warp, invisibility, time stop, speedster, clones, teleport, size shift, laser vision, portal, power up), scene lighting, heat haze, scorch marks, light wrap, cinematic look, training rounds with golden targets, 👍 hands-free switch, photo of big moments, haptics.
+- Next: combos between powers (fireball through a portal, lightning into the energy ball, a beam reflected by the shield), telekinesis that lifts real objects (segment an object, move its pixels), body-wide powers with the pose model (a cape, wings, a ground-pound shockwave), two-player duels (one power each, hits on the other person), a daily challenge, a slow-motion replay of the last big moment.
+- Per-power tuning after real-device tests: charge distance (1.9 hand sizes), clap speed (2.4 → 1.15 sizes within 0.35 s), push growth (+22 % in 0.25 s), flick speed (1.5 heights / s), mouth-open threshold (0.24 on / 0.14 off), circle roundness (0.32), frost "still" speed (0.6), teleport pointing hold (0.7 s) and the 0.5 sideways threshold, pinch-zoom range (0.35–1.8), 👍 switch hold (0.8 s), light strength (×1.5).
 
 ## Ideas backlog
 - Jaw-open / blink blendshapes driving 3D accessories (visor opening, eyes glowing).
@@ -34,6 +34,7 @@
 - Service worker gain on the second launch.
 - Wake lock, haptics, share sheet and Add to Home Screen on phones.
 - Contextual hints (dark, no hands, one hand, too close) with a live camera.
+- Superpower mode, round 2: how the scene lighting looks on real skin and walls (it may need a cap in bright rooms), light wrap strength on teleport / size shift, frost readability on busy backgrounds, the shield's hex size on phones, cinematic letterbox in portrait.
 - Superpower mode with real hands and a real room: every gesture threshold above, the invisibility clean plate (lighting changes, auto-exposure), selfie-segmenter edge quality, laser aim (`faceAim` neutral pitch 0.6), clones spacing, real FPS with the world pass + glow pass on phones.
 - Music mode with real hands (all 8 instruments): finger-count chord picking (`fingerCount` thresholds), strum line feel, beats-grid pinch targeting, DJ filter range, rhythm windows (70/140 ms) and the song lessons' wait mode; pinch thresholds, harp crossing feel, drum strike speed (`minSpeed`), audible latency, Web MIDI with a real DAW, audio in recorded videos (Safari MP4 + AAC).
 

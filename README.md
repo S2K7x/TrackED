@@ -121,10 +121,12 @@ The UI is light and airy: a warm off-white canvas with soft colour fields, frost
 | `src/music/band.js` | Backing band: grooves, bass and stabs that follow the progression |
 | `src/music/lessons.js` / `songs.js` / `learn.js` | Wait-mode song lessons, rhythm games, first steps; public-domain melodies; music-basics cards |
 | `src/device.js` | Device profile: mobile/desktop, performance tier, detection size, model cadence |
-| `src/powers/catalog.js` | The 11 superpowers: labels, tiles, gestures, how-to text, which models each one needs |
-| `src/powers/gestures.js` | Hand tracks with velocity and growth, energy charge, clap, air-circle, triggers, face aim |
-| `src/powers/controller.js` | Superpower mode: gestures → powers → particles, glows, sounds, HUD |
-| `src/powers/fx-gl.js` | WebGL2 passes: learned background, frame history ring, the world pass (warps, invisibility, time stop, afterimages, clones, portals, aura), one instanced glow draw |
+| `src/powers/catalog.js` | The 16 superpowers: labels, tiles, gestures, how-to text, which models each one needs |
+| `src/powers/abilities.js` | One small module per power (gesture + per-frame simulation + optional HUD) |
+| `src/powers/gestures.js` | Hand tracks with velocity and growth, energy charge, clap, air circle, triggers, face aim, body position from the mask, two-hand pinch zoom, spring |
+| `src/powers/controller.js` | Superpower mode engine: hand tracks, shared helpers (lights, heat, scorch, shockwaves, hit tests), title card, training HUD |
+| `src/powers/fx-gl.js` | WebGL2 passes: learned background, frame history ring, the world pass (warps, heat, lights, scorch, frost, moved / resized you, invisibility, time stop, afterimages, clones, portals, aura, cinematic look), one instanced glow draw |
+| `tools/powers-smoke.cjs` | Light headless smoke test of every power (tiny fake camera, tracking off, injected data) |
 | `src/powers/particles.js` / `lightning.js` / `targets.js` / `sfx.js` | CPU particle pool + glow batch, procedural lightning, training targets, synthesised sound effects |
 | `src/one-euro.js` | **One Euro filter** that smooths landmarks without lag |
 | `src/geometry.js` | Builds the quad between the two hands |
@@ -193,26 +195,32 @@ A separate mode (switch **Effects → Music** at the top of the panel, or press 
 - **Looper** (<kbd>L</kbd>) records a phrase and loops it. Videos recorded in music mode include the sound.
 
 ## Superpower mode
-A third mode (switch to **Powers** at the top of the panel, or press <kbd>S</kbd>) with its own tabs: **Powers · Style · Play · Feel**. Pick a power; the status line tells you its gesture, and **How to use your powers** explains them all. Everything is drawn on the WebGL canvas, so photos and videos include the effects and their sounds. All designs are original: generic comic-book powers, not any character's signature move.
+A third mode (switch to **Powers** at the top of the panel, or press <kbd>S</kbd>) with its own tabs: **Powers · Style · Play · Feel**. Pick a power: a title card shows it, the status line tells you its gesture, and **How to use your powers** explains them all. Hold 👍 for a moment to jump to the next power without touching anything. Everything is drawn on the WebGL canvas, so photos and videos include the effects and their sounds. All designs are original: generic comic-book powers, not any character's signature move.
 
 | Power | Gesture |
 |---|---|
-| **Energy wave** | Hold both hands close together, as if holding a ball: energy charges between your palms. Throw them sideways for a beam, or open them for a blast at the camera. |
-| **Lightning** | Open fingers crackle; both hands make arcs jump between them; pinch to throw a bolt where your index points. |
-| **Pyro** | Open hand = flames, fist = embers, quick flick = a fireball that explodes at the edge. |
+| **Energy wave** | Hold both hands close together, as if holding a ball: energy charges between your palms (a ring shows the charge). Throw them sideways for a beam, or open them for a blast at the camera. |
+| **Lightning** | Open fingers crackle; both hands make arcs jump between them; pinch to throw a bolt where your index points. It scorches the spot it hits. |
+| **Pyro** | Open hand = flames, fist = embers, quick flick = a fireball that explodes and leaves a burn mark. |
+| **Frost** | Hold a palm still: frost crystals spread on the picture around it. Both palms still: the screen freezes over from the edges. Flick: an ice shard that shatters. |
 | **Force** | Open palm bends space like a lens; push your palm at the camera for a shockwave; pinch for a black hole. |
+| **Shield** | Raise an open palm: a hexagonal force field. Poke it with your other hand to make it ripple, push it for a shockwave. |
+| **Reality warp** | Pinch the picture and pull: the room stretches like putty and springs back with a wobble when you let go. Two hands, two grabs. |
 | **Invisibility** | Hold an open palm still for a second. The room behind you shows through (TrackED learns it while you're not in front of it). Looks: shimmer, clear or ghost. |
 | **Time stop** | Clap: the room freezes and turns cold, you keep moving, drops hang in the air (push them with your fingers). |
 | **Speedster** | Colourful afterimages trail behind you, brighter when you move fast. |
-| **Clones** | Hold ✌️: 2 or 4 copies of you appear and copy your moves a split second later. |
-| **Laser vision** | Open your mouth: beams shoot from your eyes, aimed by turning your head. |
+| **Clones** | Hold ✌️: 2 or 4 copies of you appear, with contact shadows, and copy your moves a split second later. |
+| **Teleport** | Point left or right and hold still: you blink a third of the picture away (the room fills the spot you left). Point up to come back. |
+| **Size shift** | Pinch with both hands and spread them to grow, bring them together to shrink, like zooming a photo. Two fists: normal size. |
+| **Laser vision** | Open your mouth: beams shoot from your eyes, aimed by turning your head, and burn a trail on the wall. |
 | **Portal** | Draw a circle in the air with your index: a swirling portal opens behind you; a fist inside closes it. |
 | **Power up** | Clench both fists: an aura flares around your silhouette, sparks rise, the picture shakes. |
 
-- **Style**: colour (shared with the effects), intensity (Subtle, Strong, Epic) and the invisibility look.
-- **Play**: **Training** (glowing targets float around; hit them with any power, combos multiply the score, best score saved), invisibility / time stop / clones with a gesture or always on, 2 or 4 clones.
-- **Feel**: sound effects (synthesised, also in recorded videos) and screen shake.
-- **How it stays fast**: hands always; the light person segmenter (~250 KB) only for powers that need your silhouette, the face model only for laser vision. The whole look is two GPU passes: one full-screen pass for every warp and compositing effect, and one instanced draw call for every particle, beam, bolt, orb and ring. About 2 ms of JavaScript per frame in a headless test.
+- **Realism**: every power **lights the real room** (a camera pixel is roughly albedo × light, so added light scales the pixel: your hands, face and the walls take its colour), hot things make the air shimmer (heat haze), impacts leave **scorch marks** that glow and cool to soot, big hits shake the camera with a touch of chromatic aberration, and moved or resized silhouettes get a **light wrap** from the room so they don't look pasted on.
+- **Style**: colour, intensity (Subtle, Strong, Epic), camera look (**Natural** or **Cinematic**: teal-and-orange grade, letterbox, grain, vignette) and the invisibility look.
+- **Play**: **Training** (60-second rounds; targets get more numerous and faster, golden targets are worth ×3, combos multiply the score, best score saved), the hands-free 👍 switch, invisibility / time stop / clones with a gesture or always on, 2 or 4 clones.
+- **Feel**: synthesised sound effects (also in recorded videos), screen shake and lens effects, and **Photo of big moments** (a photo at the peak of a blast, explosion, time stop, teleport…). Phones vibrate on big moments.
+- **How it stays fast**: hands always; the light person segmenter (~250 KB) only for powers that need your silhouette, the face model only for laser vision. The whole look is two GPU passes: one full-screen pass for every warp, light and composite, and one instanced draw call for every particle, beam, bolt, orb, ring and shield. About 2 ms of JavaScript per frame in a headless test.
 
 ## Robustness and error handling
 Every failure the app can hit in the real world has a defined behaviour, and each one was verified by injecting it in a browser:

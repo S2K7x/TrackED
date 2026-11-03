@@ -10,7 +10,7 @@
 // instanced draw call and one buffer upload per frame.
 
 /** Glow primitive kinds (must match the shader in fx-gl.js). */
-export const KIND = { DOT: 0, LINE: 1, ORB: 2, RING: 3, BEAM: 4, SPARK: 5, FLAME: 6 };
+export const KIND = { DOT: 0, LINE: 1, ORB: 2, RING: 3, BEAM: 4, SPARK: 5, FLAME: 6, SHIELD: 7 };
 export const STRIDE = 12; // ax ay bx by | r g b a | width kind p1 p2
 
 export class GlowBatch {

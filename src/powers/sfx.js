@@ -152,6 +152,27 @@ export class PowerSfx {
     this.noise({ dur: 1.4, type: "bandpass", from: 300, to: 3000, q: 4, gain: 0.25, attack: 0.3 });
   }
   close() { this.tone({ type: "sine", from: 800, to: 120, dur: 0.5, gain: 0.25 }); }
+  shieldUp() {
+    this.tone({ type: "sine", from: 180, to: 520, dur: 0.35, gain: 0.25, attack: 0.03 });
+    this.noise({ dur: 0.35, type: "bandpass", from: 600, to: 3000, q: 3, gain: 0.15, attack: 0.05 });
+  }
+  ping() { this.tone({ type: "sine", from: 1400 + Math.random() * 300, to: 700, dur: 0.4, gain: 0.18 }); }
+  crackle() { this.noise({ dur: 0.05 + Math.random() * 0.05, type: "highpass", from: 4000 + Math.random() * 3000, to: 9000, q: 1, gain: 0.07 }); }
+  shatter() {
+    this.noise({ dur: 0.5, type: "highpass", from: 3000, to: 6000, q: 0.7, gain: 0.45, attack: 0.002 });
+    for (let i = 0; i < 5; i++) this.tone({ type: "sine", from: 2000 + Math.random() * 2500, to: 1500, dur: 0.25, gain: 0.05, delay: Math.random() * 0.15 });
+  }
+  grab() { this.tone({ type: "triangle", from: 300, to: 180, dur: 0.15, gain: 0.2 }); }
+  boing() {
+    this.tone({ type: "sine", from: 140, to: 420, dur: 0.18, gain: 0.3 });
+    this.tone({ type: "sine", from: 420, to: 160, dur: 0.35, gain: 0.2, delay: 0.15 });
+  }
+  teleport() {
+    this.tone({ type: "sawtooth", from: 200, to: 2400, dur: 0.25, gain: 0.12 });
+    this.noise({ dur: 0.4, type: "bandpass", from: 6000, to: 500, q: 2, gain: 0.3, attack: 0.01, delay: 0.1 });
+    this.tone({ type: "sine", from: 1600, to: 1550, dur: 0.6, gain: 0.08, delay: 0.25 });
+  }
+  fanfare() { [0, 4, 7, 12].forEach((s, i) => this.tone({ type: "square", from: 523 * 2 ** (s / 12), to: 523 * 2 ** (s / 12), dur: 0.22, gain: 0.08, delay: i * 0.12 })); }
   hit(combo = 1) {
     const f = 660 * 2 ** (Math.min(combo - 1, 8) / 12);
     this.tone({ type: "square", from: f, to: f * 2, dur: 0.12, gain: 0.12 });

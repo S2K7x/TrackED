@@ -234,3 +234,62 @@ export function faceAim(face, aspect = 1) {
   const yaw = ((face.nose.x - mx) * aspect) / r, pitch = (face.nose.y - my) / r - 0.6;
   return { open: face.open ?? 0, yaw, pitch, eyes: [face.eyeL, face.eyeR] };
 }
+
+/**
+ * Where you are, from the soft person mask (camera space, 0..255): centre of
+ * mass and bounding box, in DISPLAY space (mirrored when `mirror`). Sampled
+ * on a coarse grid (every `step` pixels), so it costs a few thousand reads.
+ * @returns {{cx, cy, left, right, top, bottom, area}|null} area = fraction of the picture
+ */
+export function maskStats(mask, mirror = true, step = 4) {
+  const { data, width: W, height: H } = mask;
+  let n = 0, sx = 0, sy = 0, x0 = 1, x1 = 0, y0 = 1, y1 = 0, total = 0;
+  for (let y = 0; y < H; y += step) {
+    for (let x = 0; x < W; x += step) {
+      total++;
+      if (data[y * W + x] < 128) continue;
+      const u = (x + 0.5) / W, v = (y + 0.5) / H;
+      n++; sx += u; sy += v;
+      if (u < x0) x0 = u; if (u > x1) x1 = u;
+      if (v < y0) y0 = v; if (v > y1) y1 = v;
+    }
+  }
+  if (n < total * 0.01) return null;              // less than 1 % of the picture: nobody there
+  const mx = (u) => (mirror ? 1 - u : u);
+  return {
+    cx: mx(sx / n), cy: sy / n,
+    left: Math.min(mx(x0), mx(x1)), right: Math.max(mx(x0), mx(x1)),
+    top: y0, bottom: y1, area: n / total,
+  };
+}
+
+/**
+ * Two-hand pinch zoom, like on a phone: while BOTH hands pinch, the scale is
+ * the starting scale × (distance now / distance at the start).
+ */
+export class PinchZoom {
+  constructor({ min = 0.35, max = 1.8 } = {}) { this.min = min; this.max = max; this.scale = 1; this.start = null; }
+  reset() { this.scale = 1; this.start = null; }
+  /** @returns {{active: boolean, scale: number}} */
+  update(tracks, aspect = 1) {
+    const [a, b] = tracks;
+    if (!a || !b || !a.info.pinch || !b.info.pinch) { this.start = null; return { active: false, scale: this.scale }; }
+    const pa = a.info.tip, pb = b.info.tip;
+    const d = Math.max(0.02, Math.hypot((pa.x - pb.x) * aspect, pa.y - pb.y));
+    if (!this.start) this.start = { d, scale: this.scale };
+    this.scale = Math.max(this.min, Math.min(this.max, (this.start.scale * d) / this.start.d));
+    return { active: true, scale: this.scale };
+  }
+}
+
+/** Critically-under-damped spring (snap-back with a little wobble). Semi-implicit Euler. */
+export class Spring {
+  constructor({ stiffness = 90, damping = 9 } = {}) { this.k = stiffness; this.c = damping; this.x = 0; this.v = 0; }
+  step(target, dt) {
+    const h = Math.min(dt, 1 / 30);
+    this.v += (this.k * (target - this.x) - this.c * this.v) * h;
+    this.x += this.v * h;
+    return this.x;
+  }
+  set(x) { this.x = x; this.v = 0; }
+}

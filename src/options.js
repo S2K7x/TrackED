@@ -247,6 +247,18 @@ Object.assign(OPTIONS, {
     { value: "clear", label: "Clear" },
     { value: "ghost", label: "Ghost" },
   ],
+  look: [
+    { value: "natural", label: "Natural" },
+    { value: "cinema", label: "🎬 Cinematic" },
+  ],
+  powerSwitch: [
+    { value: "on", label: "👍 hold = next power" },
+    { value: "off", label: "Off" },
+  ],
+  snap: [
+    { value: "off", label: "Off" },
+    { value: "on", label: "📸 Photo of big moments" },
+  ],
   cloneCount: [
     { value: "2", label: "2 clones" },
     { value: "4", label: "4 clones" },
@@ -272,9 +284,9 @@ Object.assign(OPTIONS, {
 /** Tabs of the superpower mode. */
 export const POWER_TABS = [
   { id: "power", label: "Powers", groups: ["power", "plate"] },
-  { id: "pstyle", label: "Style", groups: ["color", "intensity", "cloak"] },
-  { id: "play", label: "Play", groups: ["training", "activation", "cloneCount"] },
-  { id: "feel", label: "Feel", groups: ["powerSound", "shake"] },
+  { id: "pstyle", label: "Style", groups: ["color", "intensity", "look", "cloak"] },
+  { id: "play", label: "Play", groups: ["training", "powerSwitch", "activation", "cloneCount"] },
+  { id: "feel", label: "Feel", groups: ["powerSound", "shake", "snap"] },
 ];
 
 /** One-tap "jam" setups for people who don't know where to start. */
@@ -365,6 +377,9 @@ export const DEFAULTS = {
   training: "off",
   powerSound: "on",
   shake: "on",
+  look: "natural",
+  powerSwitch: "on",
+  snap: "off",
 };
 
 /** "#ff2d55" → [1, 0.176, 0.333] */

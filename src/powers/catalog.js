@@ -45,6 +45,18 @@ export const POWERS = [
     ],
   },
   {
+    id: "frost", label: "Frost", icon: "❄️",
+    tile: "radial-gradient(circle at 30% 30%,#fff 0 8%,transparent 9%),conic-gradient(from 10deg,#dff4ff,#9fd3f2,#e9f8ff,#86c4ea,#dff4ff)",
+    needs: [],
+    hint: "Hold an open palm still: frost spreads around it. Both palms still: the whole screen freezes over. Flick to throw an ice shard.",
+    how: [
+      "Open a hand: icy mist rolls off your fingers.",
+      "Hold the palm <b>still</b>: frost crystals grow on the picture around it, then slowly melt.",
+      "Hold <b>both palms</b> still: frost creeps in from every edge of the screen.",
+      "<b>Flick</b> an open hand: an ice shard flies off and shatters, leaving frost where it lands.",
+    ],
+  },
+  {
     id: "force", label: "Force", icon: "✋",
     tile: "radial-gradient(circle,#05060a 0 16%,var(--pick) 20%,transparent 23%,transparent 34%,rgba(255,255,255,.5) 36%,transparent 39%),#26232e",
     needs: [],
@@ -53,6 +65,29 @@ export const POWERS = [
       "Show an open palm: the picture bends around it like a lens.",
       "<b>Push</b> your palm quickly towards the camera: a shockwave ripples through the room.",
       "<b>Pinch</b> thumb and index: a black hole swallows the light around your fingers.",
+    ],
+  },
+  {
+    id: "shield", label: "Shield", icon: "🛡️",
+    tile: "radial-gradient(circle,transparent 0 52%,var(--pick) 56% 60%,transparent 62%),repeating-conic-gradient(from 30deg,rgba(255,255,255,.18) 0 60deg,rgba(255,255,255,.05) 0 120deg),#14202b",
+    needs: [],
+    hint: "Raise an open palm towards the camera: a hexagonal force field appears. Poke it with your other hand, push it to blast.",
+    how: [
+      "Raise an open hand, palm towards the camera: a force field of glowing hexagons opens in front of it.",
+      "Poke it with a finger of your other hand: it ripples.",
+      "<b>Push</b> the palm towards the camera: the shield releases a shockwave.",
+      "In Training, targets that touch the shield are destroyed.",
+    ],
+  },
+  {
+    id: "warp", label: "Reality warp", icon: "🫳",
+    tile: "radial-gradient(ellipse 30% 50% at 60% 50%,transparent 60%,rgba(255,255,255,.6) 62%,transparent 66%),repeating-linear-gradient(100deg,#2d3b55 0 10px,#4f6a99 10px 20px)",
+    needs: [],
+    hint: "Pinch the picture and pull: the world stretches like putty. Let go and it springs back.",
+    how: [
+      "<b>Pinch</b> anywhere with thumb and index: you grab the picture there.",
+      "Move your hand: the room stretches and bends like putty. Use both hands to grab two spots.",
+      "Let go: it springs back into place with a wobble.",
     ],
   },
   {
@@ -93,6 +128,27 @@ export const POWERS = [
       "Hold a ✌️ sign still for a moment: copies of you pop up on both sides with a puff.",
       "They copy your moves a split second later. Pick 2 or 4 clones in <b>Play</b>.",
       "Hold ✌️ again to dismiss them. Stand in the middle of the picture so they have room.",
+    ],
+  },
+  {
+    id: "teleport", label: "Teleport", icon: "💫", needs: ["person", "plate"],
+    tile: "linear-gradient(90deg,transparent 18%,rgba(255,255,255,.25) 18% 22%,transparent 22% 62%,#f4f4f1 62% 78%,transparent 78%),radial-gradient(circle at 30% 50%,var(--pick) 0 6%,transparent 18%),#1b1d2b",
+    hint: "Point left or right and hold still: you blink across the room. Point up to come back.",
+    how: [
+      "First let TrackED learn the room: step out of view for 2–3 seconds (the camera must not move).",
+      "Point your index finger to the left or right and hold still: you vanish and reappear a third of the picture away.",
+      "Do it again to blink further. Point <b>up</b> and hold to come back to your real spot.",
+    ],
+  },
+  {
+    id: "size", label: "Size shift", icon: "🔍", needs: ["person", "plate"],
+    tile: "radial-gradient(ellipse 12% 22% at 30% 70%,#f4f4f1 98%,transparent),radial-gradient(ellipse 22% 40% at 68% 55%,#f4f4f1 98%,transparent),#2a2f3a",
+    hint: "Pinch with both hands and spread them apart to grow, bring them together to shrink. Two fists: back to normal.",
+    how: [
+      "First let TrackED learn the room: step out of view for 2–3 seconds (the camera must not move).",
+      "<b>Pinch with both hands</b>, then spread them apart: you grow, like zooming a photo.",
+      "Bring them together to shrink, down to a third of your size. You stay standing where your feet are.",
+      "Make <b>two fists</b> to go back to your normal size.",
     ],
   },
   {
@@ -145,9 +201,11 @@ export const POWER_GUIDE = {
     {
       heading: "For the best results",
       tips: [
-        "Keep the camera still: invisibility, time stop and portals compare each frame with the room behind you.",
+        "Keep the camera still: invisibility, time stop, teleport and size shift use the room behind you, learned while you weren't in front of it.",
+        "Hold 👍 for a moment to switch to the next power without touching anything.",
         "Stand back so your hands and upper body are in view, in good light.",
-        "Turn on <b>Training</b> in the Play tab: targets float around, hit them with your power.",
+        "Turn on <b>Training</b> in the Play tab: 60-second rounds of targets to hit with your power. Golden ones are worth triple.",
+        "Every power lights up the real room around it. Try it in a dim room for the best look, and pick <b>Cinematic</b> in Style.",
         "Record a video (<kbd>R</kbd>): the effects and their sounds are in the clip.",
       ],
     },

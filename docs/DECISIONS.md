@@ -40,6 +40,11 @@
 | Two GPU passes per frame for every power: one full-screen "world" pass, one instanced glow draw | One shader handles all warps and compositing (branches are uniform, so cheap); all glows share one buffer upload and one draw call. "Screen" blending keeps colours readable over bright rooms |
 | CPU particles (structure of arrays, swap-remove), not transform feedback | ≤ 4000 particles; emission follows the hands; ~2 ms of JS per frame in total |
 | Gestures read on every tracking result, simulation and drawing on every frame | Same split as music: triggers never miss a short gesture, motion stays smooth |
+| One module per power (`abilities.js`) on top of a shared engine (`controller.js`) | With 16 powers, a single switch statement was unreadable. Each ability only does gesture → effect; lights, heat, scorch, shockwaves, hit tests, sound and the GPU passes are shared helpers |
+| Every power lights the room (`col += col × L`), plus heat haze, scorch marks, shake + chromatic aberration | The single biggest realism gain: effects stop looking pasted on. Lights are capped at the 8 strongest per frame, heat at 6, scorches at 12 |
+| Scorch marks are packed in one float: 1..2 = glowing (heat), 0..1 = soot fading out | One vec4 per mark, no extra uniform array |
+| Teleport and size shift share one transform (anchor at your feet, scale, offset) and the learned room | Same code path, light wrap on both |
+| Browser tests switch real tracking off (`state.noTracking`) and use a 320×180, 15 fps fake camera | Running the MediaPipe models on a 720p fake feed for minutes made the owner's Mac fan spin up. The smoke test now takes ~30 s at ~70 % of one core |
 | Pinch requires the index **not curled** | A fist's thumb rests on the folded index: without this, fists read as pinches (caught by a unit test) |
 
 ## Bugs found and fixed (worth remembering)
@@ -58,6 +63,9 @@
 | Music gestures missed (1 note out of 3 pinches in a test) | Gesture detection ran at the render rate and sampled the hands only when a frame was drawn | Detection moved to `onVision` (every tracking result); test now gets 3/3 pinches, 6/6 drum strikes |
 | Looper replayed missed notes in a burst after a pause | The cursor advanced by at most one loop per call, so it fell behind real time | After a gap longer than the loop, jump to the present |
 | WebGL "feedback loop" error the first time a power used the learned room | Creating a texture binds it to the *active* unit; the new plate replaced the camera on unit 0, then was rendered into while sampled | Textures are created on a spare unit (15) |
+| Shield invisible (only its light showed) | `KIND.SHIELD` was used but never declared, so the instance kind was `NaN` and the shader drew nothing | Declared; a unit test now checks every `KIND.*` used exists and that the shader handles it |
+| Long power hints ran off the screen | The status pill was `nowrap` | It wraps (max 620 px) |
+| Continuous power sounds never came back after the tab was hidden | Hiding stopped the sound loops but the abilities kept their (dead) handles | `powers.silence()` stops the ability's loops too; they restart lazily |
 | Power-up aura covered the whole body in white | The blurred "outer" mask didn't exclude the body itself | Glow × (1 − body mask) |
 | Instagram UI visible in test screenshots | The test webcam clip was a screen recording of a reel | Cropped clip. The app itself never adds such UI |
 

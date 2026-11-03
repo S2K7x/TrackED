@@ -42,7 +42,8 @@ const GROUP_TITLES = {
   preset: "Jam presets: one tap to start", style: "Band style", progression: "Chord progression", tempo: "Tempo",
   metronome: "Metronome", kit: "Drum kit", lesson: "Lessons",
   power: "Superpower", plate: "Get started", intensity: "Intensity", cloak: "Invisibility look", cloneCount: "Clones",
-  activation: "Invisibility, time stop, clones", training: "Training", powerSound: "Sound", shake: "Screen shake",
+  activation: "Invisibility, time stop, clones", training: "Training", powerSound: "Sound", shake: "Screen shake & lens effects",
+  look: "Camera look", powerSwitch: "Hands-free switch", snap: "Auto photo",
 };
 
 // ---------------- State ----------------
@@ -356,7 +357,9 @@ function toggleLoop() {
 // Its own tabs and settings. Hands always run; the light body segmenter and
 // the face model only when the chosen power needs them. Everything is drawn
 // on the main canvas (src/powers/fx-gl.js), so photos and videos include it.
-const POWER_KEYS = new Set(["power", "intensity", "cloak", "cloneCount", "activation", "training", "powerSound", "shake"]);
+const POWER_KEYS = new Set(["power", "intensity", "cloak", "cloneCount", "activation", "training", "powerSound", "shake", "look", "powerSwitch", "snap"]);
+const SNAP_EVERY = 5000;                   // "photo of big moments": at most one every 5 s
+let lastSnap = 0;
 const BEST_KEY = "tracked.powerBest";
 let powers = null, powersLoading = null;
 
@@ -368,6 +371,15 @@ function ensurePowers() {
     powers = new PowersMode({ renderer, engine, overlay: $("#power-layer") });
     try { powers.bestSaved = Number(localStorage.getItem(BEST_KEY)) || 0; } catch { /* storage blocked */ }
     powers.onBest = (n) => { try { localStorage.setItem(BEST_KEY, String(n)); } catch { /* storage blocked */ } };
+    powers.onNextPower = () => { nextPower(); buzz(15); };
+    powers.onMoment = () => {
+      buzz(25);
+      const now = performance.now();
+      if (settings.snap === "on" && capture && !capture.recorder && now - lastSnap > SNAP_EVERY) {
+        lastSnap = now;
+        setTimeout(() => takePhoto(), 120);   // a moment after the trigger: the peak of the effect
+      }
+    };
     return powers;
   }).catch((err) => {
     console.error(err);
@@ -376,6 +388,11 @@ function ensurePowers() {
     return null;
   });
   return powersLoading;
+}
+
+function nextPower() {
+  const list = OPTIONS.power.map((o) => o.value);
+  set("power", list[(list.indexOf(settings.power) + 1) % list.length]);
 }
 
 function applyPowerSettings(key) {
@@ -1261,8 +1278,10 @@ function renderFrame() {
   const t = performance.now();
   // power saving: with no hand in sight for 3 s, track every other frame (a hand
   // entering the picture is still picked up within ~70 ms)
-  const idle = t - state.handsSeenAt > 3000 && !isPowers() && !(maskArea() === "always" && (settings.mask !== "none" || settings.accessory !== "none"));
-  if (!idle || (state.idleTick = !state.idleTick)) tracker.submit(video, t, extrasWanted());
+  const busyPowers = isPowers() && powers && (powers.busy || powers.wants().person);
+  const idle = t - state.handsSeenAt > 3000 && !busyPowers && !(maskArea() === "always" && (settings.mask !== "none" || settings.accessory !== "none"));
+  // state.noTracking: automated browser tests inject landmarks and don't need the models (saves the CPU / GPU)
+  if (!state.noTracking && (!idle || (state.idleTick = !state.idleTick))) tracker.submit(video, t, extrasWanted());
   update(t / 1000);
   if (isPowers() && powers) {
     // superpowers: their own GPU passes, then a small 2D HUD on top
@@ -1546,7 +1565,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     video.pause();
     music?.release();
-    powers?.sfx.stopAll();
+    powers?.silence();
     engine.suspend();
     if (capture?.recorder) toggleRecording(); // save the clip instead of recording a frozen frame
   }

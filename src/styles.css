@@ -127,6 +127,8 @@ video { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: no
 /* mobile: hint sits just above the bottom sheet, near the hands */
 #status { bottom: calc(var(--sheet-h, 150px) + 14px + env(safe-area-inset-bottom)); }
 #status:has(span:empty) { display: none; }
+/* long hints (superpowers) wrap instead of running off the screen */
+#status { white-space: normal; text-align: center; border-radius: 18px; max-width: min(620px, calc(var(--stage-w, 100vw) - 32px)); line-height: 1.3; }
 #rec-pill { top: calc(72px + env(safe-area-inset-top)); font-variant-numeric: tabular-nums; }
 #toast { top: calc(var(--stage-top, 0px) + var(--stage-h, 100vh) * .42); white-space: normal; text-align: center; }
 

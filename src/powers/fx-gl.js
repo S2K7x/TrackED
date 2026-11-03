@@ -85,13 +85,31 @@ uniform int   uHistHead;
 uniform int   uClones;
 uniform float uCloneAmt;
 uniform float uAura;
-uniform vec4  uWaves[4];     // x, y, radius, strength
+uniform vec4  uWaves[4];      // x, y, radius, strength
 uniform int   uWaveN;
-uniform vec4  uWells[3];     // x, y, radius, strength (> 0 lens, < 0 black hole)
+uniform vec4  uWells[4];      // x, y, radius, strength (> 0 lens, < 0 black hole)
 uniform int   uWellN;
-uniform vec4  uPortals[2];   // x, y, radius, open 0..1
+uniform vec4  uDrags[2];      // x, y (where the grab is now), dx, dy (how far it was pulled)
+uniform float uDragR[2];
+uniform int   uDragN;
+uniform vec4  uHeat[6];       // x, y, radius, strength: rising heat haze
+uniform int   uHeatN;
+uniform vec4  uLights[8];     // x, y, radius, intensity
+uniform vec3  uLightCol[8];
+uniform int   uLightN;
+uniform vec4  uScorch[12];    // x, y, radius, w: 1..2 = glowing (heat w − 1), 0..1 = soot fading out
+uniform int   uScorchN;
+uniform vec4  uPortals[2];    // x, y, radius, open 0..1
 uniform int   uPortalN;
+uniform vec4  uMove;          // you, moved: anchor x, y, scale, amount (size shift, teleport)
+uniform vec2  uMoveOff;       // offset of your silhouette (display units)
+uniform float uFrost;         // frost creeping in from the edges
+uniform vec4  uFrostPts[4];   // x, y, radius, amount (frost grown from a palm)
+uniform int   uFrostN;
+uniform float uAberr;
 uniform float uFlash;
+uniform float uVignette;
+uniform float uCinema;
 
 const int LAYERS = ${HIST_LAYERS};
 vec2 src(vec2 uv) { return vec2(uMirror ? 1.0 - uv.x : uv.x, uv.y); }
@@ -105,6 +123,7 @@ vec4 hist(int age, vec2 uv) {
 }
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+vec2 hash2(vec2 p) { return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); }
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
@@ -112,6 +131,27 @@ float noise(vec2 p) {
 }
 float fbm(vec2 p) { return 0.55 * noise(p) + 0.3 * noise(p * 2.03 + 7.1) + 0.15 * noise(p * 4.1 + 3.3); }
 vec3 hue(float h) { return clamp(abs(fract(h + vec3(0.0, 2.0, 1.0) / 3.0) * 6.0 - 3.0) - 1.0, 0.0, 1.0); }
+// Voronoi: x = distance to the nearest cell edge, yz = that cell's id
+vec3 voronoi(vec2 p) {
+  vec2 n = floor(p), f = fract(p), mg, mr;
+  float md = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(i, j), r = g + hash2(n + g) - f;
+    float d = dot(r, r);
+    if (d < md) { md = d; mr = r; mg = g; }
+  }
+  md = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = mg + vec2(i, j), r = g + hash2(n + g) - f;
+    if (dot(mr - r, mr - r) > 1e-5) md = min(md, dot(0.5 * (mr + r), normalize(r - mr)));
+  }
+  return vec3(md, n + mg);
+}
+// the room behind you: learned plate where it has been seen, a heat-haze shimmer elsewhere
+vec3 room(vec2 uv, vec2 refr) {
+  vec4 pl = fbo(uPlate, uv);
+  return pl.a > 0.5 ? fbo(uPlate, uv + refr).rgb : mix(cam(uv + refr * 3.0 + vec2(0.012, -0.01)), vec3(luma(cam(uv))), 0.3);
+}
 
 void main() {
   vec2 uv = vUv + uShake;
@@ -126,7 +166,7 @@ void main() {
     float r = length(d), band = (r - w.z) / 0.05;
     uv -= (r > 1e-4 ? d / r : vec2(0.0)) / A * exp(-band * band) * w.w * 0.04;
   }
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < 4; i++) {
     if (i >= uWellN) break;
     vec4 w = uWells[i];
     vec2 d = (uv - w.xy) * A;
@@ -138,10 +178,69 @@ void main() {
     if (w.w < 0.0) hole = max(hole, s * smoothstep(R * 0.3, R * 0.16, r));
     uv = w.xy + d / A;
   }
+  for (int i = 0; i < 2; i++) {           // reality putty: the picture follows the grab, with a soft falloff
+    if (i >= uDragN) break;
+    vec4 g = uDrags[i];
+    vec2 d = (uv - g.xy) * A;
+    float f = exp(-dot(d, d) / (uDragR[i] * uDragR[i]));
+    uv -= g.zw * f;
+  }
+  for (int i = 0; i < 6; i++) {           // heat haze: rising, wobbling refraction above hot things
+    if (i >= uHeatN) break;
+    vec4 h = uHeat[i];
+    vec2 d = (uv - h.xy) * A;
+    float f = h.w * exp(-dot(d, d) / (h.z * h.z)) * smoothstep(-h.z * 0.6, h.z * 0.4, -d.y);
+    uv += (vec2(noise(uv * A * 38.0 + vec2(0.0, uTime * 4.0)), noise(uv * A * 38.0 + vec2(5.2, uTime * 4.0 + 1.3))) - 0.5) * 0.012 * f;
+  }
 
   vec3 live = cam(uv);
+  if (uAberr > 0.0005) {                  // chromatic aberration: red and blue pulled apart from the centre
+    vec2 ab = (uv - 0.5) * uAberr;
+    live = vec3(cam(uv + ab).r, live.g, cam(uv - ab).b);
+  }
   float m = smoothstep(0.3, 0.7, person(uv, 0.0));
   vec3 col = live;
+
+  // ---- frost: crystals grow in from the edges and from your palm ----
+  float fr = 0.0;
+  if (uFrost > 0.001 || uFrostN > 0) {
+    float edge = min(min(uv.x, 1.0 - uv.x) * uAspect, min(uv.y, 1.0 - uv.y));
+    float n = fbm(uv * A * 6.0);
+    fr = smoothstep(uFrost * 0.42 + 0.02, uFrost * 0.42 - 0.08, edge + (n - 0.5) * 0.12) * step(0.001, uFrost);
+    for (int i = 0; i < 4; i++) {
+      if (i >= uFrostN) break;
+      vec4 p = uFrostPts[i];
+      float d = length((uv - p.xy) * A) + (n - 0.5) * p.z * 0.5;
+      fr = max(fr, p.w * smoothstep(p.z, p.z * 0.55, d));
+    }
+    if (fr > 0.001) {
+      vec3 v = voronoi(uv * A * 16.0);
+      vec2 facet = (hash2(v.yz) - 0.5) * 0.014 * fr;                 // each crystal refracts a bit differently
+      vec3 c = 0.25 * (cam(uv + facet) + cam(uv + facet + vec2(0.003, 0.0)) + cam(uv + facet - vec2(0.0, 0.003)) + cam(uv + facet + vec2(-0.002, 0.002)));
+      vec3 ice = mix(c, vec3(0.84, 0.93, 1.0), 0.32) * vec3(0.93, 0.98, 1.08);
+      ice += vec3(0.9, 0.97, 1.0) * (1.0 - smoothstep(0.0, 0.05, v.x)) * 0.35;           // bright crystal seams
+      ice += vec3(1.0) * step(0.992, hash(floor(uv * A * 220.0))) * (0.5 + 0.5 * sin(uTime * 3.0 + hash(v.yz) * 40.0));
+      col = mix(col, ice, smoothstep(0.0, 0.35, fr));
+    }
+  }
+
+  // ---- you, moved or resized (teleport, size shift): the room fills the spot you left ----
+  if (uMove.w > 0.001 && uHasMask > 0.5) {
+    vec2 an = uMove.xy;
+    vec2 suv = an + (uv - an - uMoveOff) / uMove.z;
+    suv.x += uMove.w < 0.999 ? (noise(vec2(uv.y * 60.0, uTime * 30.0)) - 0.5) * 0.04 * (1.0 - uMove.w) : 0.0;   // glitch while appearing
+    float here = smoothstep(0.15, 0.5, max(person(uv, 0.0), person(uv, 2.0) * 1.25));
+    float th = fbm(uv * A * 9.0);
+    float amt = smoothstep(th - 0.1, th + 0.1, uMove.w * 1.2 - 0.1);
+    col = mix(col, room(uv, vec2(0.0)), here * amt);
+    float inb = step(0.0, suv.x) * step(suv.x, 1.0) * step(0.0, suv.y) * step(suv.y, 1.0);
+    float ms = smoothstep(0.35, 0.65, person(suv, 0.0)) * inb;
+    vec3 you = cam(suv);
+    // light wrap: the room's light bleeds onto your edges, so you sit IN the room, not pasted on it
+    you = mix(you, you + room(uv, vec2(0.0)) * 0.35, clamp(1.0 - person(suv, 1.5), 0.0, 1.0) * ms);
+    col = mix(col, you, ms * amt);
+    col += uColor * clamp(1.0 - abs(uMove.w * 1.2 - 0.1 - th) / 0.05, 0.0, 1.0) * step(uMove.w, 0.99) * ms;
+  }
 
   // ---- time stop: the room freezes and goes cold, you stay live ----
   if (uFrozen > 0.001) {
@@ -170,7 +269,11 @@ void main() {
       vec2 off = vec2(side * 0.26 * ring, 0.0);
       vec4 h = hist(min(int(ring) * 3 + k % 2, uHistN - 1), uv - off);
       float appear = smoothstep(0.0, 0.25, uCloneAmt - 0.75 * noise((uv - off) * A * 30.0));
-      col = mix(col, h.rgb * (1.0 - 0.07 * ring), smoothstep(0.45, 0.75, h.a) * appear * (1.0 - m));
+      float a = smoothstep(0.45, 0.75, h.a) * appear * (1.0 - m);
+      // a soft contact shadow under each clone grounds it in the room
+      float shadow = smoothstep(0.3, 0.0, length(((uv - off) - vec2(0.5, 0.97)) * vec2(uAspect * 1.6, 9.0))) * appear * 0.35;
+      col *= 1.0 - shadow * (1.0 - m);
+      col = mix(col, h.rgb * (1.0 - 0.07 * ring), a);
     }
   }
 
@@ -202,20 +305,26 @@ void main() {
                   person(uv + vec2(0.0, e), 2.0) - person(uv - vec2(0.0, e), 2.0));
     float n = noise(uv * A * 16.0 + uTime * 1.3);
     vec2 refr = g * 0.05 + (n - 0.5) * 0.008;
-    vec4 pl = fbo(uPlate, uv);
-    float bend = uCloak == 1 ? 1.0 : 0.15;
-    vec3 room = pl.a > 0.5 ? fbo(uPlate, uv + refr * bend).rgb
-      // never seen behind you: heat-haze of the live picture (a "cloaked" shimmer instead of a hole)
-      : mix(cam(uv + refr * 3.0 + vec2(0.012, -0.01)), vec3(luma(live)), 0.3);
+    vec3 cloak = room(uv, refr * (uCloak == 1 ? 1.0 : 0.15));
     float edge = clamp(length(g) * 6.0, 0.0, 1.0);
-    vec3 cloak = room;
     if (uCloak == 1) cloak += (uColor * 0.5 + 0.2) * edge * (0.5 + 0.5 * sin(uTime * 6.0 + n * 6.0)) * 0.6;
-    if (uCloak == 2) cloak = mix(room, live, 0.28) + uColor * edge * 0.5;
+    if (uCloak == 2) cloak = mix(cloak, live, 0.28) + uColor * edge * 0.5;
     // dissolve: noise threshold sweeps with the fade, with a glowing front
     float th = fbm(uv * A * 9.0);
     float amount = smoothstep(th - 0.08, th + 0.08, uInvis * 1.16 - 0.08);
     float front = (1.0 - abs(uInvis * 1.16 - 0.08 - th) / 0.06) * step(0.01, uInvis) * step(uInvis, 0.99);
     col = mix(col, cloak, mi * amount) + uColor * clamp(front, 0.0, 1.0) * mi * 1.2;
+  }
+
+  // ---- scorch marks: glowing embers that cool down to soot ----
+  for (int i = 0; i < 12; i++) {
+    if (i >= uScorchN) break;
+    vec4 s = uScorch[i];
+    float d = length((uv - s.xy) * A) / s.z + (noise(uv * A * 40.0 + s.xy * 10.0) - 0.5) * 0.7;
+    float mark = smoothstep(1.0, 0.2, d) * (1.0 - m);
+    float heat = max(s.w - 1.0, 0.0), soot = min(s.w, 1.0);
+    col *= 1.0 - mark * 0.5 * soot;
+    col += vec3(1.0, 0.36, 0.06) * mark * smoothstep(0.75, 0.0, d) * heat * heat * 1.4 * (0.7 + 0.3 * noise(uv * A * 70.0 + uTime * 2.0));
   }
 
   // ---- aura: flames licking up from your silhouette ----
@@ -229,8 +338,36 @@ void main() {
     col = mix(col, col + uColor * 0.25, body * uAura * 0.5 * (0.6 + 0.4 * sin(uTime * 9.0)));   // pulsing inner glow
   }
 
+  // ---- light from the powers falls on the real room and on you ----
+  // a camera pixel is roughly albedo × light, so added light scales the pixel itself:
+  // nearby walls, hands and faces take the power's colour instead of being covered by it
+  if (uLightN > 0) {
+    vec3 L = vec3(0.0);
+    for (int i = 0; i < 8; i++) {
+      if (i >= uLightN) break;
+      vec4 l = uLights[i];
+      float d = length((uv - l.xy) * A) / l.z;
+      L += uLightCol[i] * l.w / (1.0 + d * d * 3.0);
+    }
+    col += col * L * 1.5 + L * 0.05;
+  }
+
   col *= 1.0 - hole;
   col += uFlash * (0.75 + 0.25 * uColor);
+
+  // ---- camera: vignette, cinematic grade, letterbox, grain ----
+  vec2 c = vUv - 0.5;
+  float vig = uVignette + uCinema * 0.35;
+  if (vig > 0.001) col *= 1.0 - vig * smoothstep(0.35, 0.95, length(c * vec2(1.0, 1.15)) * 1.35);
+  if (uCinema > 0.001) {
+    float l = luma(col);
+    vec3 graded = col * mix(vec3(0.88, 1.0, 1.1), vec3(1.1, 1.0, 0.86), smoothstep(0.15, 0.75, l));   // teal shadows, warm highlights
+    graded = mix(vec3(l), graded, 1.12);
+    graded = graded * graded * (3.0 - 2.0 * graded);                                                    // gentle S-curve
+    col = mix(col, clamp(graded, 0.0, 1.0), uCinema * 0.75);
+    col += (hash(vUv * 1000.0 + fract(uTime) * 91.0) - 0.5) * 0.035 * uCinema;
+    col *= step(0.105 * uCinema, 0.5 - abs(c.y));
+  }
   o = vec4(col, 1.0);
 }`;
 
@@ -249,11 +386,11 @@ out vec4 vPar;
 void main() {
   vec2 a = iSeg.xy * vec2(uAspect, 1.0), b = iSeg.zw * vec2(uAspect, 1.0);
   float w = iPar.x, kind = iPar.y;
-  float pad = kind == 3.0 ? w + iPar.z * 4.0 : kind == 2.0 ? w * 2.6 : w * 3.2;   // room for the halo
+  float pad = kind == 3.0 ? w + iPar.z * 4.0 : kind == 2.0 ? w * 2.6 : kind == 7.0 ? w * 1.3 : w * 3.2;   // room for the halo
   vec2 dir = b - a;
   float L = length(dir);
   vec2 t = L > 1e-6 ? dir / L : vec2(1.0, 0.0), n = vec2(-t.y, t.x);
-  vec2 p = (kind == 3.0 ? a : mix(a, b, aCorner.x * 0.5 + 0.5)) + t * aCorner.x * pad + n * aCorner.y * pad;
+  vec2 p = (kind == 3.0 || kind == 7.0 ? a : mix(a, b, aCorner.x * 0.5 + 0.5)) + t * aCorner.x * pad + n * aCorner.y * pad;
   vP = p; vSeg = vec4(a, b); vCol = iCol; vPar = iPar;
   vec2 s = vec2(p.x / uAspect, p.y) - uShake;
   gl_Position = vec4(s.x * 2.0 - 1.0, 1.0 - s.y * 2.0, 0.0, 1.0);
@@ -279,6 +416,14 @@ float sdSeg(vec2 p, vec2 a, vec2 b) {
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-9), 0.0, 1.0);
   return length(pa - ba * h);
 }
+// hexagonal grid: xy = position inside the cell, zw = cell id
+vec4 hexCell(vec2 p) {
+  const vec2 s = vec2(1.0, 1.7320508);
+  vec2 a = mod(p, s) - s * 0.5, b = mod(p - s * 0.5, s) - s * 0.5;
+  vec2 g = dot(a, a) < dot(b, b) ? a : b;
+  return vec4(g, p - g);
+}
+float hexDist(vec2 p) { p = abs(p); return max(dot(p, vec2(0.5, 0.8660254)), p.x); }
 void main() {
   float w = vPar.x, kind = vPar.y;
   vec3 c = vCol.rgb;
@@ -303,6 +448,17 @@ void main() {
     float d = sdSeg(vP, vSeg.xy, vSeg.zw) / (w * wob);
     I = smoothstep(1.0, 0.6, d) * 0.9 + exp(-max(d - 0.8, 0.0) * 1.8) * 0.5 * uGlow;
     core = smoothstep(0.55, 0.1, d);
+  } else if (kind == 7.0) {                           // SHIELD: hexagonal force field; p1 = hit age 0..1 (< 0: none)
+    vec2 d = vP - vSeg.xy;
+    float r = length(d) / w;
+    vec4 h = hexCell(d / w * 7.0);
+    float seam = 1.0 - smoothstep(0.0, 0.07, 0.5 - hexDist(h.xy));
+    float cellPulse = 0.55 + 0.45 * sin(uTime * 3.0 + hash(h.zw) * 6.28);
+    float body = smoothstep(1.02, 0.97, r);
+    float rim = pow(clamp(r, 0.0, 1.0), 5.0);                    // brighter at the edge, like a sphere seen face-on
+    float hit = vPar.z >= 0.0 ? exp(-pow((r - vPar.z * 1.1) / 0.09, 2.0)) * (1.0 - vPar.z) : 0.0;
+    I = body * (0.1 + seam * 0.5 * cellPulse + rim * 0.9 + hit * 1.4) + exp(-max(r - 1.0, 0.0) * 9.0) * 0.35 * uGlow;
+    core = body * (rim * 0.25 + hit * 0.6 + seam * 0.08);
   } else {                                            // DOT / LINE: gaussian glow around a segment
     float d = sdSeg(vP, vSeg.xy, vSeg.zw) / w;
     I = exp(-d * d * 1.2) + exp(-d * 1.3) * 0.3 * uGlow;
@@ -344,6 +500,11 @@ function texture(gl, filter = gl.LINEAR, target = gl.TEXTURE_2D) {
   return t;
 }
 
+// world-pass uniform arrays: [vec4 array, max entries, count uniform]
+const LIST_KEYS = { uWaves: "waves", uWells: "wells", uDrags: "drags", uHeat: "heat", uLights: "lights", uScorch: "scorch", uPortals: "portals", uFrostPts: "frostPts" };
+const LISTS = [["uWaves", 4, "uWaveN"], ["uWells", 4, "uWellN"], ["uDrags", 2, "uDragN"], ["uHeat", 6, "uHeatN"],
+  ["uLights", 8, "uLightN"], ["uScorch", 12, "uScorchN"], ["uPortals", 2, "uPortalN"], ["uFrostPts", 4, "uFrostN"]];
+
 // texture units used here (0 = the main renderer's camera texture)
 const U = { video: 0, person: 6, plate: 7, hist: 8, freeze: 9 };
 const SPARE_UNIT = 15;
@@ -358,9 +519,14 @@ export class PowerRenderer {
     this.snapProg = program(gl, VERT, SNAP_FRAG, ["uVideo", "uPerson", "uHasMask"]);
     this.world = program(gl, VERT, WORLD_FRAG, [
       "uVideo", "uPerson", "uPlate", "uFreeze", "uHist", "uMirror", "uAspect", "uTime", "uColor", "uShake", "uHasMask",
-      "uInvis", "uCloak", "uFrozen", "uEcho", "uHistN", "uHistHead", "uClones", "uCloneAmt", "uAura",
-      "uWaves", "uWaveN", "uWells", "uWellN", "uPortals", "uPortalN", "uFlash",
+      "uInvis", "uCloak", "uFrozen", "uEcho", "uHistN", "uHistHead", "uClones", "uCloneAmt", "uAura", "uFlash",
+      "uMove", "uMoveOff", "uFrost", "uAberr", "uVignette", "uCinema", "uLightCol", "uDragR",
+      ...LISTS.flatMap(([name, , count]) => [name, count]),
     ]);
+    // uniform arrays are filled in place every frame (no allocation per frame)
+    this.lists = Object.fromEntries(LISTS.map(([name, max]) => [name, new Float32Array(max * 4)]));
+    this.lightCol = new Float32Array(8 * 3);
+    this.dragR = new Float32Array(2);
     this.glowProg = program(gl, GLOW_VERT, GLOW_FRAG, ["uAspect", "uShake", "uTime", "uGlow"]);
 
     // person mask: R8, mipmapped (textureLod = free blur for halos, edges and the aura)
@@ -583,19 +749,29 @@ export class PowerRenderer {
     gl.uniform1i(u.uClones, this.hist && this.histCount > 1 ? s.clones || 0 : 0);
     gl.uniform1f(u.uCloneAmt, s.cloneAmt || 0);
     gl.uniform1f(u.uAura, s.aura || 0);
-    const vec4s = (list, n, f) => {
-      const a = new Float32Array(n * 4);
-      list.slice(0, n).forEach((x, i) => a.set(f(x), i * 4));
-      return a;
-    };
-    const waves = s.waves ?? [], wells = s.wells ?? [], portals = s.portals ?? [];
-    gl.uniform4fv(u.uWaves, vec4s(waves, 4, (w) => [w.x, w.y, w.r, w.s]));
-    gl.uniform1i(u.uWaveN, Math.min(4, waves.length));
-    gl.uniform4fv(u.uWells, vec4s(wells, 3, (w) => [w.x, w.y, w.r, w.s]));
-    gl.uniform1i(u.uWellN, Math.min(3, wells.length));
-    gl.uniform4fv(u.uPortals, vec4s(portals, 2, (q) => [q.x, q.y, q.r, q.open]));
-    gl.uniform1i(u.uPortalN, Math.min(2, portals.length));
     gl.uniform1f(u.uFlash, s.flash || 0);
+    const mv = s.move;
+    gl.uniform4f(u.uMove, mv?.ax ?? 0.5, mv?.ay ?? 1, mv?.scale ?? 1, this.hasMask ? mv?.amt ?? 0 : 0);
+    gl.uniform2f(u.uMoveOff, mv?.dx ?? 0, mv?.dy ?? 0);
+    gl.uniform1f(u.uFrost, s.frost || 0);
+    gl.uniform1f(u.uAberr, s.aberr || 0);
+    gl.uniform1f(u.uVignette, s.vignette || 0);
+    gl.uniform1f(u.uCinema, s.cinema || 0);
+    // lists of {x, y, r, s}; lights also carry a colour, drags an offset
+    for (const [name, max, count] of LISTS) {
+      const src = s[LIST_KEYS[name]] ?? [], buf = this.lists[name], n = Math.min(max, src.length);
+      for (let i = 0; i < n; i++) {
+        const e = src[i];
+        buf[i * 4] = e.x; buf[i * 4 + 1] = e.y;
+        buf[i * 4 + 2] = e.dx ?? e.r; buf[i * 4 + 3] = e.dy ?? e.s;
+        if (name === "uLights") this.lightCol.set(e.color, i * 3);
+        if (name === "uDrags") this.dragR[i] = e.r;
+      }
+      gl.uniform4fv(u[name], buf);
+      gl.uniform1i(u[count], n);
+    }
+    gl.uniform3fv(u.uLightCol, this.lightCol);
+    gl.uniform1fv(u.uDragR, this.dragR);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
