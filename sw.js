@@ -5,7 +5,7 @@
 //   "latest" model URL is served from cache and refreshed in the background.
 // - The app's own files: network-first, so updates show up immediately, with
 //   the cache as an offline fallback.
-const VERSION = "tracked-v1";
+const VERSION = "tracked-v2";
 const CDN = /^https:\/\/(cdn\.jsdelivr\.net|storage\.googleapis\.com|fonts\.googleapis\.com|fonts\.gstatic\.com|www\.gstatic\.com)\//;
 
 self.addEventListener("install", () => self.skipWaiting());
@@ -48,7 +48,10 @@ function staleWhileRevalidate(e) {
 
 async function networkFirst(req) {
   try {
-    return await put(req, await fetch(req));
+    // "no-cache" = always ask the server (a cheap 304 when unchanged). Without it, the
+    // browser's HTTP cache can answer with an old copy and an update never shows up.
+    // A navigation request can't be re-built with options; navigations are revalidated anyway.
+    return await put(req, await (req.mode === "navigate" ? fetch(req) : fetch(req, { cache: "no-cache" })));
   } catch (err) {
     const hit = await caches.match(req);
     if (hit) return hit;

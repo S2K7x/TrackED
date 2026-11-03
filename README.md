@@ -10,10 +10,10 @@ Everything runs in the browser, on your device. No video leaves it.
 ```bash
 git clone https://github.com/S2K7x/TrackED.git
 cd TrackED
-npm start                 # serves the app at http://localhost:8000 (Python 3)
-# no Python? `npx serve -l 8000` works too
+npm start                 # serves the app at http://localhost:8000 (Node, no install needed)
 ```
 Open **http://localhost:8000** in Chrome, Edge, Safari or Firefox, click **Start camera** and allow the camera.
+After a `git pull`, a normal reload shows the new version (`npm start` tells the browser to recheck every file). If you served the app another way and still see the old version, do a hard reload (<kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd>).
 
 **On a phone.** The camera only works on `https://` pages, so expose your local server over HTTPS:
 ```bash

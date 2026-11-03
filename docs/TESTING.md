@@ -6,7 +6,7 @@
 ## Browser tests (headless Chromium with a fake camera)
 Playwright and Chromium are pre-installed in the cloud container (`require('playwright')`, don't reinstall).
 
-1. Serve the app: `python3 -m http.server 8765` (run it in the background; the session time limit stops it).
+1. Serve the app: `node tools/serve.mjs 8765` (run it in the background; the session time limit stops it). `tools/powers-smoke.cjs` serves the app itself.
 2. Make a fake webcam clip (Y4M) with ffmpeg, e.g. from a video of hands making the frame gesture. Crop out any app UI (screen recordings of reels contain Instagram buttons):
    `ffmpeg -i input.mp4 -t 10 -vf "crop=W:H:X:Y,scale=640:-2,fps=15" -pix_fmt yuv420p cam.y4m`
 3. Launch Chromium with:

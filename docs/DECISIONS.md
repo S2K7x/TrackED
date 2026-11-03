@@ -51,6 +51,8 @@
 | Browser tests switch real tracking off (`state.noTracking`) and use a 320×180, 15 fps fake camera | Running the MediaPipe models on a 720p fake feed for minutes made the owner's Mac fan spin up. The smoke test now takes ~30 s at ~70 % of one core |
 | Pinch requires the index **not curled** | A fist's thumb rests on the folded index: without this, fists read as pinches (caught by a unit test) |
 
+| `npm start` is a tiny Node server with `Cache-Control: no-cache` (was `python3 -m http.server`) | Python's server sends no cache header, so the browser kept old JavaScript after a `git pull` (see the bug below) |
+
 ## Bugs found and fixed (worth remembering)
 | Bug | Cause | Fix |
 |---|---|---|
@@ -66,6 +68,7 @@
 | Kitsune ears drawn above the forehead were invisible | The face mesh stops at the hairline (UV oval top ≈ v 0.11); paint outside the oval is never sampled | Ears painted inside the oval; masks are previewed on the Blender reference head (its UVs match the app) |
 | Music gestures missed (1 note out of 3 pinches in a test) | Gesture detection ran at the render rate and sampled the hands only when a frame was drawn | Detection moved to `onVision` (every tracking result); test now gets 3/3 pinches, 6/6 drum strikes |
 | Looper replayed missed notes in a burst after a pause | The cursor advanced by at most one loop per call, so it fell behind real time | After a gap longer than the loop, jump to the present |
+| After `git pull` + `npm start`, the owner still saw the old app | `python3 -m http.server` sends no `Cache-Control`, so Chrome kept the modules by heuristic caching, and the service worker's network-first `fetch(req)` went through that same HTTP cache | `npm start` serves with `no-cache` + ETag (`tools/serve.mjs`), the service worker fetches app files with `cache: "no-cache"`, cache version bumped to `tracked-v2` |
 | WebGL "feedback loop" error the first time a power used the learned room | Creating a texture binds it to the *active* unit; the new plate replaced the camera on unit 0, then was rendered into while sampled | Textures are created on a spare unit (15) |
 | Shield invisible (only its light showed) | `KIND.SHIELD` was used but never declared, so the instance kind was `NaN` and the shader drew nothing | Declared; a unit test now checks every `KIND.*` used exists and that the shader handles it |
 | Long power hints ran off the screen | The status pill was `nowrap` | It wraps (max 620 px) |

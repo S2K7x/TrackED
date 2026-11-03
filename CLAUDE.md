@@ -13,7 +13,7 @@ Owner: S2K7x (French-speaking; answer in French, keep **all code, UI text, comme
 
 ## Commands
 ```bash
-npm start    # python3 -m http.server 8000 → http://localhost:8000
+npm start    # node tools/serve.mjs 8000 → http://localhost:8000 (no-cache headers: a reload always shows the latest code)
 npm test     # node --test tests/*.test.mjs (114 tests, Node 20+)
 node tools/powers-smoke.cjs --cam cam.y4m --out shots   # light headless check of every power (see docs/TESTING.md)
 npm run check  # node --check on every module (also in CI)
