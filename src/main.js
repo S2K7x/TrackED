@@ -8,6 +8,7 @@ import { PRESETS } from "./options.js";
 import { OPTIONS, TABS, MUSIC_TABS, POWER_TABS, DEFAULTS, hexToRgb, exclusiveConflicts } from "./options.js";
 import { POWER_GUIDE, powerById, powerWants } from "./powers/catalog.js";
 import { Capture } from "./capture.js";
+import { CallWindow } from "./call-window.js";
 import { AudioEngine } from "./music/audio.js";
 import { MusicMode, lessonSettings, SONGS, RHYTHMS } from "./music/controller.js";
 import { MUSIC_GUIDES, MUSIC_GUIDE_ORDER } from "./music/learn.js";
@@ -44,7 +45,7 @@ const GROUP_TITLES = {
   metronome: "Metronome", kit: "Drum kit", lesson: "Lessons",
   power: "Superpower", plate: "Get started", intensity: "Intensity", cloak: "Invisibility look", cloneCount: "Clones",
   activation: "Invisibility, time stop, clones", training: "Training", powerSound: "Sound", shake: "Screen shake & lens effects",
-  look: "Camera look", powerSwitch: "Hands-free switch", snap: "Auto photo",
+  look: "Camera look", powerSwitch: "Hands-free switch", snap: "Auto photo", call: "Video calls", callMirror: "Call window view",
 };
 
 // ---------------- State ----------------
@@ -81,7 +82,7 @@ let extrasEvery = device.extrasEvery; // adapted at runtime from the measured tr
 const quadFilter = new PointsFilter(4, { minCutoff: 2, beta: 12, dCutoff: 1 });
 const stats = { renderFrames: 0, detectFrames: 0, fps: 0, dps: 0, slow: 0, fast: 0, since: performance.now() };
 
-let renderer, tracker, capture;
+let renderer, tracker, capture, callWin;
 
 // ---------------- Settings (per-viewer convenience; works without storage) ----------------
 function loadSettings() {
@@ -167,6 +168,11 @@ function renderChips() {
 function renderGroup(group) {
   const on = (v) => settings[group] === v;
   if (group === "plate") return renderPowerStart();
+  if (group === "call") {
+    const b = el("button", { className: "chip lead" + (callWin?.isOpen ? " on" : "") }, callWin?.isOpen ? "✕ Close call window" : "📺 Open call window");
+    b.addEventListener("click", toggleCallWindow);
+    return [b];
+  }
   if (group === "instrument" || group === "power") {
     return OPTIONS[group].map((o) => {
       const b = el("button", { className: "fx" + (on(o.value) ? " on" : "") }, `<i></i>${o.label}`);
@@ -278,6 +284,7 @@ function set(key, value, rerender = true) {
   if (key === "accessory" || key === "color") applyAccessory();
   if (MUSIC_KEYS.has(key)) applyMusicSettings(key);
   if (POWER_KEYS.has(key) || (key === "color" && isPowers())) applyPowerSettings(key);
+  if (key === "callMirror" && callWin) callWin.mirror = value === "on";
   if ((key === "anchor" || key === "size") && settings.accessory === "model") three?.fitUserModel(settings.anchor, Number(settings.size), modelFit);
   if (rerender) renderChips();
 }
@@ -437,6 +444,21 @@ function drawPowersHud(t) {
   const g = powerLayer.getContext("2d");
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   powers.drawHud(g, w, h, t);
+}
+
+// ---------------- Call window (a clean picture to bring into a video call) ----------------
+function toggleCallWindow() {
+  if (!callWin) return;
+  if (callWin.isOpen) { callWin.close(); renderChips(); return; }
+  if (!callWin.open()) { flash("Your browser blocked the call window. Allow pop-ups for TrackED and try again."); return; }
+  renderChips();
+  flash("Call window open: share it in your call, or capture it in OBS");
+}
+
+/** Right after each draw: photo snapshot, call window copy (the drawing buffer isn't preserved). */
+function afterDraw() {
+  capture.afterDraw();
+  callWin?.push(state.facing === "user");
 }
 
 let lessonTick = 0;                    // refresh the rhythm lesson card every 6 frames
@@ -1073,6 +1095,7 @@ addEventListener("keydown", (e) => {
   else if (e.key === "m" || e.key === "M") setMode(isMusic() ? "effects" : "music");
   else if (e.key === "s" || e.key === "S") setMode(isPowers() ? "effects" : "powers");
   else if ((e.key === "l" || e.key === "L") && isMusic()) toggleLoop();
+  else if (e.key === "c" || e.key === "C") toggleCallWindow();
   else if (e.key === "?") toggleHelp();
   else if (e.key === "Escape" && !$("#guidePanel").hidden) closeGuide();
   else if (e.key === "Escape" && !$("#helpPanel").hidden) toggleHelp(false);
@@ -1101,6 +1124,8 @@ async function start() {
   }
   watchContextLoss();
   capture = new Capture(canvas, (msg) => flash(msg));
+  callWin = new CallWindow(canvas, { onHiddenTick: hiddenFrame, onClose: () => renderChips() });
+  callWin.mirror = settings.callMirror === "on";
   // in music and powers mode, recordings carry the sound
   capture.audioSource = () => ((isMusic() || isPowers()) && engine.ready ? engine.stream : null);
   if (settings.mode === "powers") {
@@ -1426,6 +1451,19 @@ function onFrame() {
     if (video.currentTime === lastVideoTime) return;
     lastVideoTime = video.currentTime;
   }
+  runFrame();
+}
+
+// A hidden page gets no video-frame callbacks. While the call window is open the
+// picture must keep moving, so the call window's ticker drives the frames then.
+let lastTickTime = -1;
+function hiddenFrame() {
+  if (glLost || video.paused || video.currentTime === lastTickTime) return;
+  lastTickTime = video.currentTime;
+  runFrame();
+}
+
+function runFrame() {
   try {
     renderFrame();
     frameFailures.ok();
@@ -1451,7 +1489,7 @@ function renderFrame() {
     // superpowers: their own GPU passes, then a small 2D HUD on top
     powers.render(video, t / 1000, { mirror: state.facing === "user" });
     drawPowersHud(t / 1000);
-    capture.afterDraw();
+    afterDraw();
     if (state.debug) drawDebug();
     countFps(t);
     return;
@@ -1463,7 +1501,7 @@ function renderFrame() {
     music.tick(t / 1000);              // loop playback; gestures are handled in onVision
     if (music.lesson?.kind === "rhythm" && !music.lesson.finished && ++lessonTick % 6 === 0) renderLesson();
     drawMusic(t / 1000);
-    capture.afterDraw();
+    afterDraw();
     if (state.debug) drawDebug();
     countFps(t);
     return;
@@ -1486,7 +1524,7 @@ function renderFrame() {
     }
   }
   updateOnboarding(t / 1000);
-  capture.afterDraw(); // photo snapshot must happen right after drawing (drawing buffer isn't preserved)
+  afterDraw(); // photo snapshot / call window copy must happen right after drawing (drawing buffer isn't preserved)
   if (state.debug) drawDebug();
   countFps(t);
 }
@@ -1727,6 +1765,7 @@ function countFps(t) {
 document.addEventListener("visibilitychange", () => {
   if (!video.srcObject) return;
   if (document.hidden) {
+    if (callWin?.isOpen) return;              // the call window still needs a live picture
     video.pause();
     music?.release();
     powers?.silence();

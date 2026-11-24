@@ -52,6 +52,10 @@
 | Pinch requires the index **not curled** | A fist's thumb rests on the folded index: without this, fists read as pinches (caught by a unit test) |
 
 | `npm start` is a tiny Node server with `Cache-Control: no-cache` (was `python3 -m http.server`) | Python's server sends no cache header, so the browser kept old JavaScript after a `git pull` (see the bug below) |
+| Vanishing exit reuses the invisibility pass (learned room) with its own looks | Leaving a call needs the room to replace you completely: forced "clear" cloak, a thin vertical-slice dissolve for "beam out" (`uInvisStyle`), and opaque smoke puffs in the world pass (`uSmoke[4]`, fbm-billowed discs lit from above) that hide the switch. Smoke is drawn in the world pass, not as glows: glows are screen-blended and can't cover anything |
+| The forehead is found from the silhouette, not the face model | The power already needs the body mask; loading the face model too would double the cost. `maskStats` now returns `headX`, the centre of the top 8 % of the silhouette, so a raised arm doesn't pull the head estimate sideways. Sizes are in hand units (a hand is about half a head) so the zone holds at any distance |
+| Call window = a same-origin popup with a 2D canvas, filled right after each draw | `drawImage` of the WebGL canvas must happen before the buffer is cleared, like the photo snapshot. A popup keeps the controls in the main window and gives OBS a window with a fixed title ("TrackED call output") and nothing else in it. True (unmirrored) view by default, like a webcam |
+| While the call window is open, a hidden page keeps rendering | A hidden page gets no `requestVideoFrameCallback` and its timers are throttled, so a worker ticks every 33 ms and drives `runFrame()` when the page is hidden; the camera isn't paused on `visibilitychange` then |
 
 ## Bugs found and fixed (worth remembering)
 | Bug | Cause | Fix |

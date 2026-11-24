@@ -140,7 +140,7 @@ export class PowersMode {
   wants() { return powerWants(this.power); }
 
   /** True while something is visibly going on (the app keeps tracking at full rate). */
-  get busy() { return this.always || !!this.ability?.st?.on || this.waves.length > 0 || this.particles.n > 0; }
+  get busy() { return this.always || !!this.ability?.st?.on || !!this.ability?.fx || this.waves.length > 0 || this.particles.n > 0; }
 
   /** Forgets the learned room (the camera moved, or the user asked). */
   learnBackground() { this.gfx.resetPlate(); }
@@ -264,7 +264,8 @@ export class PowersMode {
   #status(hands) {
     const p = powerById(this.power);
     if (p.needs.includes("person") && !this.gfx.hasMask) return "Loading body tracking…";
-    if ((this.power === "size" || this.power === "teleport") && !this.body) return "Step into the picture so TrackED can see you";
+    if (this.power === "exit" && this.ability?.st?.on) return "You're gone: leave the call, or repeat the gesture to come back";
+    if ((this.power === "size" || this.power === "teleport" || this.power === "exit") && !this.body) return "Step into the picture so TrackED can see you";
     if (this.power === "eyes" && !this.faces.length) return "Face the camera";
     if (!hands.length && this.power !== "eyes" && !p.toggle) return "Show your hands";
     return p.hint;
@@ -286,7 +287,7 @@ export class PowersMode {
     this.lights = [];
     this.heats = [];
     this.vig = 0;
-    this.world = { wells: [], drags: [], portals: [], frostPts: [], invis: 0, frozen: 0, echo: 0, clones: 0, cloneAmt: 0, aura: 0, frost: 0, move: null };
+    this.world = { wells: [], drags: [], portals: [], frostPts: [], invis: 0, frozen: 0, echo: 0, clones: 0, cloneAmt: 0, aura: 0, frost: 0, move: null, smoke: [], cloak: null, invisStyle: 0 };
     // hands that haven't been seen for a while don't emit anything
     if (t - this.lastUpdate > 0.4 && this.tracks.length) this.handTracks.reset();
 
@@ -346,7 +347,7 @@ export class PowersMode {
     const W = this.world;
     this.gfx.drawWorld({
       mirror, time: t, aspect: this.aspect, color: this.color, shake,
-      invis: W.invis, cloak: { clear: 0, shimmer: 1, ghost: 2 }[this.s.cloak] ?? 1,
+      invis: W.invis, cloak: W.cloak ?? { clear: 0, shimmer: 1, ghost: 2 }[this.s.cloak] ?? 1, invisStyle: W.invisStyle, smoke: W.smoke,
       frozen: W.frozen, echo: W.echo, clones: W.clones, cloneAmt: W.cloneAmt, aura: W.aura,
       waves, wells: W.wells, drags: W.drags, portals: W.portals, heat, lights, scorch,
       frost: W.frost, frostPts: W.frostPts, move: W.move,

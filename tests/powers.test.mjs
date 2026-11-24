@@ -6,7 +6,8 @@ import { bolt, makeRng, rayToEdge } from "../src/powers/lightning.js";
 import { Particles, GlowBatch, KIND, STRIDE } from "../src/powers/particles.js";
 import { Targets, segDist } from "../src/powers/targets.js";
 import { MaskSmoother } from "../src/temporal.js";
-import { maskStats, PinchZoom, Spring } from "../src/powers/gestures.js";
+import { maskStats, PinchZoom, Spring, foreheadTouch, claspPose } from "../src/powers/gestures.js";
+import { outputSize } from "../src/call-window.js";
 import { ABILITIES } from "../src/powers/abilities.js";
 import { summarizeFace, mirrorFace } from "../src/faces.js";
 import { OPTIONS, POWER_TABS, DEFAULTS, PANEL_GROUPS } from "../src/options.js";
@@ -44,7 +45,8 @@ test("catalog: every power is complete and the options match it", () => {
   assert.deepEqual(powerWants("eyes"), { person: false, face: true });
   assert.deepEqual(powerWants("wave"), { person: false, face: false });
   assert.equal(powerById("nope").id, POWERS[0].id);
-  assert.equal(POWER_GUIDE.sections.length, POWERS.length + 1);
+  assert.equal(POWER_GUIDE.sections.length, POWERS.length + 2);   // + tips, + video calls
+  assert.deepEqual(powerWants("exit"), { person: true, face: false });
   assert.deepEqual(Object.keys(ABILITIES).sort(), [...POWER_IDS].sort(), "every power has an ability");
   assert.deepEqual(powerWants("teleport"), { person: true, face: false });
   // no trademarked move names
@@ -54,7 +56,7 @@ test("catalog: every power is complete and the options match it", () => {
 
 test("power tabs, settings and defaults are valid", () => {
   for (const t of POWER_TABS) for (const g of t.groups) assert.ok(OPTIONS[g] || PANEL_GROUPS.includes(g), g);
-  for (const k of ["power", "intensity", "cloak", "cloneCount", "activation", "training", "powerSound", "shake", "look", "powerSwitch", "snap"]) {
+  for (const k of ["power", "intensity", "cloak", "cloneCount", "activation", "training", "powerSound", "shake", "look", "powerSwitch", "snap", "callMirror"]) {
     assert.ok(OPTIONS[k].some((o) => o.value === DEFAULTS[k]), k);
   }
   assert.ok(OPTIONS.mode.some((o) => o.value === "powers"));
@@ -393,4 +395,95 @@ test("MaskSmoother: fast attack, slower release, transferable output", () => {
   const again = m.apply(new Uint8Array([200, 0]));
   assert.deepEqual([...again], [188, 50]);
   assert.notEqual(again.buffer, m.prev.buffer, "history is a separate copy");
+});
+
+// ---------- vanishing exit + call window ----------
+// two fingers up (index + middle), tips at the given point
+function twoFingers(tipX, tipY, s = 0.1) {
+  return hand(tipX + 0.2 * s, tipY + 0.85 * s, { s, fingers: 2, thumb: false });
+}
+
+test("exit gestures: fingers on the forehead, palms pressed together", () => {
+  const body = { cx: 0.55, headX: 0.5, top: 0.2, bottom: 1, left: 0.3, right: 0.7 };
+  const on = handInfo(twoFingers(0.5, 0.27), 1);
+  assert.ok(on.victory);
+  assert.ok(foreheadTouch(on, body, 1), "two fingers on the forehead");
+  assert.ok(foreheadTouch(handInfo(hand(0.5, 0.32, { fingers: 1, thumb: false }), 1), body, 1), "one finger works too");
+  assert.ok(!foreheadTouch(handInfo(twoFingers(0.5, 0.7), 1), body, 1), "too low (chest)");
+  assert.ok(!foreheadTouch(handInfo(twoFingers(0.85, 0.27), 1), body, 1), "beside the head");
+  assert.ok(!foreheadTouch(handInfo(hand(0.5, 0.3), 1), body, 1), "an open hand isn't the sign");
+  assert.ok(!foreheadTouch(on, null, 1), "nobody in the picture");
+
+  const a = track(hand(0.47, 0.6), 1), b = track(hand(0.53, 0.6), 2);
+  const at = claspPose([a, b], 1);
+  assert.ok(at && Math.abs(at.x - 0.5) < 1e-9 && Math.abs(at.y - 0.6) < 0.05, JSON.stringify(at));
+  assert.equal(claspPose([track(hand(0.3, 0.6), 1), track(hand(0.7, 0.6), 2)], 1), null, "hands apart");
+  assert.equal(claspPose([a, { ...b, speed: 1.5 }], 1), null, "moving fast (a clap)");
+  assert.equal(claspPose([a], 1), null, "one hand");
+});
+
+test("maskStats: the head position ignores a raised arm", () => {
+  const W = 64, H = 64, data = new Uint8Array(W * H);
+  const fill = (x0, x1, y0, y1) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) data[y * W + x] = 255; };
+  fill(26, 38, 10, 24);     // head
+  fill(16, 48, 24, 64);     // shoulders and body
+  fill(48, 56, 16, 40);     // an arm raised on one side
+  const m = maskStats({ data, width: W, height: H }, false, 2);
+  assert.ok(Math.abs(m.headX - 0.5) < 0.03, String(m.headX));
+  assert.ok(m.cx > m.headX, "the centroid is pulled towards the arm");
+});
+
+function exitScene() {
+  const ab = ABILITIES.exit(), c = fakeC({ body: { cx: 0.5, headX: 0.5, cy: 0.6, top: 0.2, bottom: 1, left: 0.35, right: 0.65, area: 0.2 } });
+  const run = (tracks, from, secs) => {
+    c.tracks = tracks;
+    for (let i = 0; i <= secs * 30; i++) { c.t = from + i / 30; c.world = { wells: [], drags: [], portals: [], frostPts: [] }; ab.gesture(c, 1 / 30); ab.frame(c, 1 / 30); }
+  };
+  return { ab, c, run };
+}
+
+test("vanishing exit: beam out with fingers on the forehead, stay gone, beam back", () => {
+  const { ab, c, run } = exitScene();
+  const fingers = [track(twoFingers(0.5, 0.27))];
+  run(fingers, 0, 0.5);
+  assert.ok(c.holdUI && c.holdUI.label === "Beam out", "hold ring while waiting");
+  run(fingers, 0.5, 0.3);
+  assert.ok(ab.fx && ab.fx.kind === "beam" && ab.st.on);
+  assert.ok(c.calls.some(([n]) => n === "sfx.teleport"));
+  assert.ok(c.B.count > 0, "streaks of light");
+  run([], 0.8, 1.5);                                          // hands down, transition over
+  assert.equal(ab.fx, null);
+  assert.equal(c.world.invis, 1, "fully gone");
+  assert.equal(c.world.cloak, 0, "plain room, no shimmer");
+  assert.equal(c.world.invisStyle, 1, "vertical slices");
+  run([], 2.3, 5);
+  assert.equal(c.world.invis, 1, "stays gone with no hands in view");
+  run(fingers, 7.3, 0.7);
+  assert.ok(ab.fx && !ab.fx.out && !ab.st.on, "same gesture: beaming back");
+  run([], 8, 1.5);
+  assert.equal(c.world.invis, 0, "back");
+});
+
+test("vanishing exit: palms together → smoke hides you, then clears on an empty room", () => {
+  const { ab, c, run } = exitScene();
+  const clasp = [track(hand(0.47, 0.6), 1), track(hand(0.53, 0.6), 2)];
+  run(clasp, 0, 0.7);
+  assert.ok(ab.fx && ab.fx.kind === "smoke" && ab.st.on);
+  assert.ok(c.calls.some(([n]) => n === "sfx.puff"));
+  run([], 0.7, 0.04);                                         // ~0.1 s after the puff
+  assert.ok(c.world.smoke.length === 4 && c.world.smoke[0].s > 0.9, "thick smoke first");
+  assert.ok(c.world.invis < 1, "you are still there behind it");
+  run([], 0.9, 0.3);
+  assert.equal(c.world.invis, 1, "gone behind the smoke");
+  run([], 1.25, 2);
+  assert.equal(ab.fx, null);
+  assert.ok(!c.world.smoke?.length || c.world.smoke.every((p) => p.s < 0.01), "the smoke has cleared");
+  assert.equal(c.world.invis, 1);
+});
+
+test("call window: output size keeps the aspect, even, capped", () => {
+  assert.deepEqual(outputSize(1920, 1080), { width: 1280, height: 720 });
+  assert.deepEqual(outputSize(640, 480), { width: 640, height: 480 });
+  assert.deepEqual(outputSize(1081, 1921), { width: 720, height: 1280 });
+  assert.deepEqual(outputSize(0, 0), { width: 2, height: 2 });
 });

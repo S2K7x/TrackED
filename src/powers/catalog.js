@@ -181,6 +181,18 @@ export const POWERS = [
       "Open your hands and it slowly calms down.",
     ],
   },
+  {
+    id: "exit", label: "Vanishing exit", icon: "🫥", needs: ["person", "plate"],
+    tile: "repeating-linear-gradient(90deg,transparent 0 7px,rgba(255,255,255,.55) 7px 8px),radial-gradient(ellipse 22% 36% at 50% 60%,rgba(255,255,255,.35),transparent 70%),radial-gradient(circle at 72% 72%,#e9e9ee 0 14%,transparent 15%),radial-gradient(circle at 84% 64%,#d9d9e0 0 11%,transparent 12%),linear-gradient(160deg,#2a3142,#55607a)",
+    hint: "Two fingers on your forehead: beam out. Palms pressed together: vanish in a puff of smoke. Same gesture to come back.",
+    how: [
+      "First let TrackED learn the room: step out of view for 2–3 seconds (the camera must not move).",
+      "<b>Beam out</b>: touch your forehead with one or two fingers and hold still for a moment: streaks of light run down through you and you're gone.",
+      "<b>Smoke puff</b>: press your palms together in front of your chest and hold: a puff of smoke, and when it clears the room is empty.",
+      "You stay gone, even if you walk away: the call sees an empty room. Leave the call, or do either gesture again to come back.",
+      "To use it in a video call, open the <b>Call window</b> in the Play tab and bring it into your call (see “Use it in a video call” below).",
+    ],
+  },
 ];
 
 export const POWER_IDS = POWERS.map((p) => p.id);
@@ -207,6 +219,16 @@ export const POWER_GUIDE = {
         "Turn on <b>Training</b> in the Play tab: 60-second rounds of targets to hit with your power. Golden ones are worth triple.",
         "Every power lights up the real room around it. Try it in a dim room for the best look, and pick <b>Cinematic</b> in Style.",
         "Record a video (<kbd>R</kbd>): the effects and their sounds are in the clip.",
+      ],
+    },
+    {
+      heading: "📺 Use it in a video call",
+      steps: [
+        "In the <b>Play</b> tab, tap <b>Call window</b>: a clean window opens with only the picture (no buttons, no hold rings). Keep both TrackED windows open and visible on screen (a corner is fine): a hidden or minimised window can stop updating.",
+        "<b>Quickest</b>: in Meet, Zoom or Teams, share that window (Present → A window).",
+        "<b>As a real camera</b>: install OBS Studio (free), add a <b>Window Capture</b> of “TrackED call output”, click <b>Start Virtual Camera</b>, then pick <b>OBS Virtual Camera</b> as your camera in the call app.",
+        "The call window shows the true (unmirrored) view, like a normal webcam. Switch to <b>Mirrored</b> in the Play tab if you prefer.",
+        "Use “Vanishing exit” to disappear, then leave the call: the others see the empty room.",
       ],
     },
   ],

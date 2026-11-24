@@ -271,6 +271,10 @@ Object.assign(OPTIONS, {
     { value: "off", label: "Training off" },
     { value: "on", label: "🎯 Training: hit targets" },
   ],
+  callMirror: [
+    { value: "off", label: "True view (like a webcam)" },
+    { value: "on", label: "Mirrored" },
+  ],
   powerSound: [
     { value: "on", label: "Sound effects" },
     { value: "off", label: "Silent" },
@@ -285,7 +289,7 @@ Object.assign(OPTIONS, {
 export const POWER_TABS = [
   { id: "power", label: "Powers", groups: ["power", "plate"] },
   { id: "pstyle", label: "Style", groups: ["color", "intensity", "look", "cloak"] },
-  { id: "play", label: "Play", groups: ["training", "powerSwitch", "activation", "cloneCount"] },
+  { id: "play", label: "Play", groups: ["call", "callMirror", "training", "powerSwitch", "activation", "cloneCount"] },
   { id: "feel", label: "Feel", groups: ["powerSound", "shake", "snap"] },
 ];
 
@@ -336,7 +340,7 @@ export function exclusiveConflicts(settings, key, value) {
 }
 
 /** Tab groups drawn by custom UI (sliders) instead of OPTIONS chips. */
-export const PANEL_GROUPS = ["fit", "looper", "preset", "lesson", "plate"];
+export const PANEL_GROUPS = ["fit", "looper", "preset", "lesson", "plate", "call"];
 
 export const DEFAULTS = {
   effect: "neon",
@@ -380,6 +384,7 @@ export const DEFAULTS = {
   look: "natural",
   powerSwitch: "on",
   snap: "off",
+  callMirror: "off",
 };
 
 /** "#ff2d55" → [1, 0.176, 0.333] */

@@ -12,7 +12,7 @@
 // leave scorch marks that cool down (c.scorch), big hits shake the camera and
 // split its colours a little (c.shake, c.aberr).
 
-import { EnergyCharge, ClapDetector, CircleStroke, faceAim, PinchZoom, Spring } from "./gestures.js";
+import { EnergyCharge, ClapDetector, CircleStroke, faceAim, PinchZoom, Spring, foreheadTouch, claspPose } from "./gestures.js";
 import { SignHold } from "../gestures.js";
 import { bolt, rayToEdge } from "./lightning.js";
 import { KIND, FIRE, WHITE, mixColor } from "./particles.js";
@@ -762,4 +762,121 @@ function aura() {
 }
 
 /** id → factory (a fresh instance per selection, so no state leaks between powers). */
-export const ABILITIES = { wave, lightning, fire, force, shield, frost, warp, size, teleport, invisible, freeze, speed, clones, eyes, portal, aura };
+// ---------------------------------------------------------------- vanishing exit (leave a call in style)
+// Two ways out, both reversible with the same gesture:
+//  - "beam": fingers on the forehead → streaks of light run down through you, you dissolve in thin
+//    vertical slices and a last line of light closes up where you stood
+//  - "smoke": palms pressed together → a thick puff of smoke hides you; when it clears, the room is empty
+// Once gone you STAY gone (the learned room replaces you), so you can leave the call or walk away.
+const EXIT_DUR = { beam: 1.1, smoke: 1.6 };
+function exit() {
+  const beamHold = new SignHold(0.6), claspHold = new SignHold(0.6);
+  const st = { on: false, level: 0 };
+  let fx = null;       // the transition playing: {kind, out, t0, x, top, bottom, w, lines, puffs}
+  let style = "beam";  // how you left (the hidden look and the way back match it)
+  const smoke = [];
+  const start = (c, kind) => {
+    const b = c.body;
+    if (!b) return;
+    const out = !st.on;
+    const w = Math.max(0.12, Math.min(0.5, b.right - b.left));
+    const x = b.headX ?? b.cx;
+    fx = { kind, out, t0: c.t, x, top: b.top, bottom: Math.min(1, b.bottom), w, from: st.level };
+    st.on = out;
+    style = kind;
+    if (kind === "beam") {
+      fx.lines = Array.from({ length: Math.round(14 * Math.max(0.7, c.k)) }, () => ({ x: x + rand(-0.5, 0.5) * w, ph: rand(0, 6.3), amp: rand(0.003, 0.012), d: rand(0, 0.25), wd: rand(0.003, 0.007) }));
+      c.sfx.teleport();
+      c.aberr(0.02);
+    } else {
+      const cy = (b.top + Math.min(1, b.bottom)) / 2, R = Math.max(0.16, w * c.aspect * 0.45);
+      fx.puffs = [
+        { x, y: cy, r: R * 1.25, d: 0 },
+        { x: x - (R * 0.8) / c.aspect, y: cy + R * 0.35, r: R, d: 0.04 },
+        { x: x + (R * 0.8) / c.aspect, y: cy + R * 0.25, r: R * 0.95, d: 0.06 },
+        { x: x + (R * 0.2) / c.aspect, y: Math.max(0.12, b.top + R * 0.35), r: R * 0.9, d: 0.02 },
+      ];
+      c.sfx.puff();
+      c.burst(x, cy, 30, { color: [0.92, 0.92, 0.95], speed: 0.5, size: 0.02, life: 0.7, drag: 3, grav: -0.1 });
+      c.shake(0.004);
+    }
+    c.moment(out ? "vanish" : "return");
+  };
+  return {
+    st,
+    get fx() { return fx; },
+    get style() { return style; },
+    gesture(c) {
+      if (fx) return;                                                    // let the transition play out
+      const fh = c.tracks.find((tr) => tr.speed < 0.6 && foreheadTouch(tr.info, c.body, c.aspect));
+      const clasp = fh ? null : claspPose(c.tracks, c.aspect);
+      const rb = beamHold.update(fh ? "beam" : null, c.t);
+      const rc = claspHold.update(clasp && c.body ? "clasp" : null, c.t);
+      if (fh && rb.sign) c.holdUI = { x: fh.info.tip.x, y: fh.info.tip.y, p: rb.progress, label: st.on ? "Beam back" : "Beam out" };
+      else if (clasp && rc.sign) c.holdUI = { x: clasp.x, y: clasp.y, p: rc.progress, label: st.on ? "Come back" : "Poof!" };
+      if (rb.fire) start(c, "beam");
+      else if (rc.fire) start(c, "smoke");
+    },
+    frame(c, dt) {
+      const { B, t } = c;
+      if (fx) {
+        const age = t - fx.t0, p = clamp01(age / EXIT_DUR[fx.kind]);
+        const white = mixColor(c.color, WHITE, 0.6);
+        if (fx.kind === "beam") {
+          // you fade in thin slices while the streaks run (out), or the reverse (back)
+          const k = clamp01((p - 0.15) / 0.45), e = k * k * (3 - 2 * k);
+          st.level = fx.out ? Math.max(fx.from, e) : Math.min(fx.from, 1 - e);
+          const len = fx.bottom - fx.top;
+          const env = Math.sin(Math.min(1, p / 0.75) * Math.PI);
+          const close = clamp01((p - 0.45) / 0.4);                     // the streaks gather on the centre line
+          for (const l of fx.lines) {
+            const lp = clamp01((p - l.d) / 0.5);
+            if (lp <= 0) continue;
+            const head = fx.top + len * Math.min(1, lp * 1.6);          // each streak runs down from the head
+            const x0 = l.x + (fx.x - l.x) * close * close;
+            let px = x0, py = fx.top;
+            for (let j = 1; j <= 6; j++) {                              // wavy, like light through water
+              const y = fx.top + (head - fx.top) * (j / 6);
+              const x = x0 + Math.sin(y * 40 + l.ph + t * 14) * l.amp * (1 - close);
+              B.push(px, py, x, y, white, 0.9 * env, l.wd * (1 - 0.6 * close), KIND.LINE);
+              px = x; py = y;
+            }
+          }
+          if (p > 0.55 && p < 0.95) {                                    // the last line of light
+            const q = (p - 0.55) / 0.4;
+            B.push(fx.x, fx.top - 0.05 * q, fx.x, fx.bottom, WHITE, 1 - q, 0.006 * (1 - q) + 0.001, KIND.LINE);
+            if (Math.random() < 0.7) c.particles.emit({ x: fx.x + rand(-0.01, 0.01), y: rand(fx.top, fx.bottom), vx: 0, vy: -rand(0.2, 0.6), life: 0.5, size: 0.004, color: white, kind: KIND.SPARK, drag: 1 });
+          }
+          c.light(fx.x, (fx.top + fx.bottom) / 2, 0.45, 1.3 * env, white);
+          if (age >= 0.45 && !fx.flashed) { fx.flashed = true; c.flash(0.3); }
+        } else {
+          // smoke: thick for half a second (you vanish behind it), then it billows up and thins out
+          if (age > 0.22) st.level = fx.out ? 1 : 0;
+          smoke.length = 0;
+          for (const f of fx.puffs) {
+            const a = Math.max(0, age - f.d);
+            const grow = 1 - Math.exp(-a * 9);
+            const dens = a <= 0 ? 0 : a < 0.65 ? 1 : Math.max(0, 1 - (a - 0.65) / (EXIT_DUR.smoke - 0.75));
+            smoke.push({ x: f.x, y: f.y - 0.06 * a, r: f.r * (0.35 + 0.65 * grow + 0.25 * a), s: dens * dens * (3 - 2 * dens) });
+          }
+          c.world.smoke = smoke;
+        }
+        if (p >= 1) fx = null;
+      } else st.level = st.on ? 1 : 0;
+      c.world.invis = st.level;
+      c.world.cloak = 0;                                                 // gone means gone: the plain room
+      c.world.invisStyle = style === "beam" ? 1 : 0;
+    },
+    hud(g, X, Y, c) {
+      if (!st.on || fx) return;
+      const text = "Hidden from the call · same gesture to come back";
+      g.fillStyle = "rgba(20,20,19,.45)";
+      const tw = g.measureText(text).width + 28, fs = parseInt(g.font.match(/(\d+)px/)?.[1] ?? "14", 10);
+      g.beginPath(); g.roundRect(X(0.5) - tw / 2, Y(1) - fs - 40, tw, fs + 16, 12); g.fill();
+      g.fillStyle = "#fff";
+      g.fillText(text, X(0.5), Y(1) - fs / 2 - 32);
+    },
+  };
+}
+
+export const ABILITIES = { wave, lightning, fire, force, shield, frost, warp, size, teleport, invisible, freeze, speed, clones, eyes, portal, aura, exit };

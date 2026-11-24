@@ -78,6 +78,7 @@ uniform vec2  uShake;
 uniform float uHasMask;
 uniform float uInvis;
 uniform int   uCloak;
+uniform int   uInvisStyle;    // 0 = noise dissolve, 1 = thin vertical slices (beam out)
 uniform float uFrozen;
 uniform float uEcho;
 uniform int   uHistN;
@@ -106,6 +107,8 @@ uniform vec2  uMoveOff;       // offset of your silhouette (display units)
 uniform float uFrost;         // frost creeping in from the edges
 uniform vec4  uFrostPts[4];   // x, y, radius, amount (frost grown from a palm)
 uniform int   uFrostN;
+uniform vec4  uSmoke[4];      // x, y, radius, density: puffs of smoke in front of everything
+uniform int   uSmokeN;
 uniform float uAberr;
 uniform float uFlash;
 uniform float uVignette;
@@ -310,7 +313,7 @@ void main() {
     if (uCloak == 1) cloak += (uColor * 0.5 + 0.2) * edge * (0.5 + 0.5 * sin(uTime * 6.0 + n * 6.0)) * 0.6;
     if (uCloak == 2) cloak = mix(cloak, live, 0.28) + uColor * edge * 0.5;
     // dissolve: noise threshold sweeps with the fade, with a glowing front
-    float th = fbm(uv * A * 9.0);
+    float th = uInvisStyle == 1 ? 0.1 + 0.8 * hash(vec2(floor(uv.x * uAspect * 90.0), 7.0)) : fbm(uv * A * 9.0);
     float amount = smoothstep(th - 0.08, th + 0.08, uInvis * 1.16 - 0.08);
     float front = (1.0 - abs(uInvis * 1.16 - 0.08 - th) / 0.06) * step(0.01, uInvis) * step(uInvis, 0.99);
     col = mix(col, cloak, mi * amount) + uColor * clamp(front, 0.0, 1.0) * mi * 1.2;
@@ -336,6 +339,20 @@ void main() {
     float flame = outer * smoothstep(0.35, 0.85, n + outer * 0.35);
     col += (uColor * 1.2 + 0.15) * flame * uAura + vec3(pow(flame, 4.0)) * 0.6 * uAura;
     col = mix(col, col + uColor * 0.25, body * uAura * 0.5 * (0.6 + 0.4 * sin(uTime * 9.0)));   // pulsing inner glow
+  }
+
+  // ---- smoke puffs: soft billowing clouds in front of everything, lit from above ----
+  for (int i = 0; i < 4; i++) {
+    if (i >= uSmokeN) break;
+    vec4 s = uSmoke[i];
+    if (s.w < 0.002) continue;
+    vec2 d = (uv - s.xy) * A / s.z;
+    float n = fbm(d * 2.4 + vec2(float(i) * 3.7, -uTime * 0.5));
+    float shape = 1.0 - length(d * vec2(1.0, 1.12)) + (n - 0.5) * 0.8;
+    float a = smoothstep(0.0, 0.3, shape) * s.w;
+    float shade = 0.74 + 0.26 * smoothstep(-0.7, 0.5, -d.y + (n - 0.5) * 0.8);
+    vec3 puff = vec3(0.94, 0.94, 0.96) * shade + (fbm(d * 7.0 + uTime * 0.3) - 0.5) * 0.06;
+    col = mix(col, puff, a);
   }
 
   // ---- light from the powers falls on the real room and on you ----
@@ -501,9 +518,9 @@ function texture(gl, filter = gl.LINEAR, target = gl.TEXTURE_2D) {
 }
 
 // world-pass uniform arrays: [vec4 array, max entries, count uniform]
-const LIST_KEYS = { uWaves: "waves", uWells: "wells", uDrags: "drags", uHeat: "heat", uLights: "lights", uScorch: "scorch", uPortals: "portals", uFrostPts: "frostPts" };
+const LIST_KEYS = { uWaves: "waves", uWells: "wells", uDrags: "drags", uHeat: "heat", uLights: "lights", uScorch: "scorch", uPortals: "portals", uFrostPts: "frostPts", uSmoke: "smoke" };
 const LISTS = [["uWaves", 4, "uWaveN"], ["uWells", 4, "uWellN"], ["uDrags", 2, "uDragN"], ["uHeat", 6, "uHeatN"],
-  ["uLights", 8, "uLightN"], ["uScorch", 12, "uScorchN"], ["uPortals", 2, "uPortalN"], ["uFrostPts", 4, "uFrostN"]];
+  ["uLights", 8, "uLightN"], ["uScorch", 12, "uScorchN"], ["uPortals", 2, "uPortalN"], ["uFrostPts", 4, "uFrostN"], ["uSmoke", 4, "uSmokeN"]];
 
 // texture units used here (0 = the main renderer's camera texture)
 const U = { video: 0, person: 6, plate: 7, hist: 8, freeze: 9 };
@@ -519,7 +536,7 @@ export class PowerRenderer {
     this.snapProg = program(gl, VERT, SNAP_FRAG, ["uVideo", "uPerson", "uHasMask"]);
     this.world = program(gl, VERT, WORLD_FRAG, [
       "uVideo", "uPerson", "uPlate", "uFreeze", "uHist", "uMirror", "uAspect", "uTime", "uColor", "uShake", "uHasMask",
-      "uInvis", "uCloak", "uFrozen", "uEcho", "uHistN", "uHistHead", "uClones", "uCloneAmt", "uAura", "uFlash",
+      "uInvis", "uCloak", "uInvisStyle", "uFrozen", "uEcho", "uHistN", "uHistHead", "uClones", "uCloneAmt", "uAura", "uFlash",
       "uMove", "uMoveOff", "uFrost", "uAberr", "uVignette", "uCinema", "uLightCol", "uDragR",
       ...LISTS.flatMap(([name, , count]) => [name, count]),
     ]);
@@ -742,6 +759,7 @@ export class PowerRenderer {
     gl.uniform1f(u.uHasMask, this.hasMask ? 1 : 0);
     gl.uniform1f(u.uInvis, this.hasMask ? s.invis || 0 : 0);
     gl.uniform1i(u.uCloak, s.cloak || 0);
+    gl.uniform1i(u.uInvisStyle, s.invisStyle || 0);
     gl.uniform1f(u.uFrozen, this.freezeTex ? s.frozen || 0 : 0);
     gl.uniform1f(u.uEcho, this.hist ? s.echo || 0 : 0);
     gl.uniform1i(u.uHistN, this.histCount);

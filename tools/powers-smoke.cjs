@@ -135,6 +135,15 @@ const SCENARIOS = {
     await __play(6, () => [[], { person: __mask(0.5, 0.6, 0.12, 0.4) }]);
     return { offset: +__tracked.powers.ability.offset.toFixed(2) };
   },
+  exit: async () => {
+    const body = () => __mask(0.5, 0.62, 0.16, 0.42);
+    await __play(6, () => [[], { person: __mask(0.5, 0.5, 0.001, 0.001) }]);
+    await __play(13, () => [[__hand(0.52, 0.34, { fingers: 2, thumb: false })], { person: body() }]);   // two fingers on the forehead
+    await __play(20, () => [[], { person: body() }]);
+    const gone = __tracked.powers.ability.st.on && __tracked.powers.world.invis === 1;
+    await __play(11, () => [[__hand(0.47, 0.6), __hand(0.53, 0.6)], { person: body() }]);               // palms together: smoke, back
+    return { goneAfterBeam: gone, smokeBack: __tracked.powers.ability.fx?.kind === "smoke" && !__tracked.powers.ability.st.on };
+  },
   size: async () => {
     await __play(6, () => [[], { person: __mask(0.5, 0.5, 0.001, 0.001) }]);
     await __play(14, (i) => [[__hand(0.42 - i * 0.012, 0.4, { pinch: true }), __hand(0.58 + i * 0.012, 0.4, { pinch: true })], { person: __mask(0.5, 0.6, 0.12, 0.4) }]);

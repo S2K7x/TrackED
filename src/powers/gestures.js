@@ -255,9 +255,15 @@ export function maskStats(mask, mirror = true, step = 4) {
     }
   }
   if (n < total * 0.01) return null;              // less than 1 % of the picture: nobody there
+  // the head: centre of the top band of the silhouette (a raised arm pulls cx sideways, not this)
+  let hn = 0, hx = 0;
+  const yEnd = Math.min(H, Math.ceil((y0 + 0.08) * H));
+  for (let y = Math.floor(y0 * H); y < yEnd; y += step) {
+    for (let x = 0; x < W; x += step) if (data[y * W + x] >= 128) { hn++; hx += (x + 0.5) / W; }
+  }
   const mx = (u) => (mirror ? 1 - u : u);
   return {
-    cx: mx(sx / n), cy: sy / n,
+    cx: mx(sx / n), cy: sy / n, headX: mx(hn ? hx / hn : sx / n),
     left: Math.min(mx(x0), mx(x1)), right: Math.max(mx(x0), mx(x1)),
     top: y0, bottom: y1, area: n / total,
   };
@@ -292,4 +298,32 @@ export class Spring {
     return this.x;
   }
   set(x) { this.x = x; this.v = 0; }
+}
+
+/**
+ * Exit power, "beam out": one or two fingers (index, or index + middle) on your
+ * forehead. The forehead is estimated from the top of your silhouette, scaled by
+ * the hand's own size (a hand is about half a head tall, whatever the distance).
+ * @param {object} info  handInfo()
+ * @param {{cx: number, top: number, headX?: number}|null} body  maskStats()
+ */
+export function foreheadTouch(info, body, aspect = 1) {
+  if (!body || !(info.victory || info.point)) return false;
+  const s = info.size;
+  const head = { x: body.headX ?? body.cx, y: body.top + 0.6 * s };
+  const dx = Math.abs(info.tip.x - head.x) * aspect, dy = info.tip.y - head.y;
+  return dx < 1.6 * s && dy > -1.1 * s && dy < 1.4 * s;
+}
+
+/**
+ * Exit power, "smoke puff": both palms pressed together (prayer hands), held
+ * still. @returns {{x, y}|null} where the hands meet
+ */
+export function claspPose(tracks, aspect = 1) {
+  const [a, b] = tracks;
+  if (!a || !b || a.info.fist || b.info.fist) return null;
+  const size = (a.info.size + b.info.size) / 2;
+  if (dist(a.info.palm, b.info.palm, aspect) > 1.3 * size) return null;
+  if (Math.max(a.speed ?? 0, b.speed ?? 0) > 0.6) return null;
+  return { x: (a.info.palm.x + b.info.palm.x) / 2, y: (a.info.palm.y + b.info.palm.y) / 2 };
 }
